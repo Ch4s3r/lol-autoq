@@ -1,5 +1,5 @@
 use anyhow::Result;
-use inquire::{InquireError, MultiSelect, Select, Text};
+use inquire::{InquireError, Select, Text};
 
 use crate::config::{Config, LanePreferences};
 
@@ -224,25 +224,57 @@ fn action_add(
 }
 
 fn action_remove(config: &mut Config, position: &str) -> Result<()> {
-    let current = champions_for_position_mut(config, position).clone();
+    const DONE: &str = "✓ Done removing";
+    let mut removed: Vec<String> = Vec::new();
 
-    let chosen =
-        match MultiSelect::new("Select champion(s) to remove:", current).prompt() {
+    loop {
+        let current = champions_for_position_mut(config, position);
+        // Show remaining champions (excluding ones already picked for removal).
+        let mut available: Vec<String> = current
+            .iter()
+            .filter(|c| !removed.iter().any(|r| r.eq_ignore_ascii_case(c)))
+            .cloned()
+            .collect();
+
+        if available.is_empty() {
+            println!("  No more champions to remove.");
+            break;
+        }
+
+        available.insert(0, DONE.to_string());
+
+        let pick = match Select::new(
+            &format!(
+                "Pick a champion to remove (marked for removal: {}):",
+                if removed.is_empty() {
+                    "none".to_string()
+                } else {
+                    removed.join(", ")
+                }
+            ),
+            available,
+        )
+        .prompt()
+        {
             Ok(v) => v,
-            Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                return Ok(())
-            }
+            Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
             Err(e) => return Err(e.into()),
         };
 
-    if chosen.is_empty() {
+        if pick == DONE {
+            break;
+        }
+        removed.push(pick);
+    }
+
+    if removed.is_empty() {
         println!("  (nothing selected)");
         return Ok(());
     }
 
     let list = champions_for_position_mut(config, position);
-    list.retain(|c| !chosen.contains(c));
-    println!("  Removed: {}.", chosen.join(", "));
+    list.retain(|c| !removed.iter().any(|r| r.eq_ignore_ascii_case(c)));
+    println!("  Removed: {}.", removed.join(", "));
     Ok(())
 }
 
