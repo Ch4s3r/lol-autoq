@@ -122,40 +122,67 @@ fn action_add(
 ) -> Result<()> {
     match champion_names {
         Some(all_names) => {
-            // Build a list of champions not already in this position's list.
-            let current = champions_for_position_mut(config, position);
-            let available: Vec<String> = all_names
-                .iter()
-                .filter(|n| !current.iter().any(|c| c.eq_ignore_ascii_case(n)))
-                .cloned()
-                .collect();
+            // Loop so each pick appends in the order the user selects, not
+            // alphabetically (MultiSelect returns display order, not pick order).
+            const DONE: &str = "✓ Done adding";
+            let mut added: Vec<String> = Vec::new();
 
-            if available.is_empty() {
-                println!("  All champions are already in the list.");
-                return Ok(());
-            }
+            loop {
+                // Exclude already-in-list champions AND ones picked this round.
+                let current = champions_for_position_mut(config, position);
+                let mut available: Vec<String> = all_names
+                    .iter()
+                    .filter(|n| {
+                        !current.iter().any(|c| c.eq_ignore_ascii_case(n))
+                            && !added.iter().any(|a| a.eq_ignore_ascii_case(n))
+                    })
+                    .cloned()
+                    .collect();
 
-            let chosen =
-                match MultiSelect::new("Select champion(s) to add (type to filter):", available)
-                    .prompt()
+                if available.is_empty() {
+                    println!("  No more champions to add.");
+                    break;
+                }
+
+                // Prepend the Done option so it stays at the top.
+                available.insert(0, DONE.to_string());
+
+                let pick = match Select::new(
+                    &format!(
+                        "Pick a champion to add (selected so far: {}):",
+                        if added.is_empty() {
+                            "none".to_string()
+                        } else {
+                            added.join(", ")
+                        }
+                    ),
+                    available,
+                )
+                .prompt()
                 {
                     Ok(v) => v,
                     Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                        return Ok(())
+                        break
                     }
                     Err(e) => return Err(e.into()),
                 };
 
-            if chosen.is_empty() {
+                if pick == DONE {
+                    break;
+                }
+                added.push(pick);
+            }
+
+            if added.is_empty() {
                 println!("  (nothing selected)");
                 return Ok(());
             }
 
             let list = champions_for_position_mut(config, position);
-            for name in &chosen {
+            for name in &added {
                 list.push(name.clone());
             }
-            println!("  Added: {}.", chosen.join(", "));
+            println!("  Added: {}.", added.join(", "));
         }
         None => {
             // Fall back to free-text when the client isn't running.
