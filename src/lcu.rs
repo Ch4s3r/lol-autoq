@@ -115,11 +115,24 @@ impl LcuClient {
         let status = resp.status();
         trace!(method = "GET", %url, %status, "response received");
         if !status.is_success() {
-            return Err(anyhow!("GET {} returned {}", path, status));
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("GET {} returned {}: {}", path, status, body));
         }
-        resp.json::<T>()
+        let text = resp
+            .text()
             .await
-            .with_context(|| format!("Failed to deserialize GET {}", path))
+            .with_context(|| format!("Failed to read response body for GET {}", path))?;
+        serde_json::from_str::<T>(&text).with_context(|| {
+            let preview = if text.len() > 500 {
+                format!("{}...", &text[..500])
+            } else {
+                text.clone()
+            };
+            format!(
+                "Failed to deserialize GET {} — response preview: {}",
+                path, preview
+            )
+        })
     }
 
     async fn post_no_body(&self, path: &str) -> Result<()> {
@@ -290,8 +303,11 @@ pub struct TeamMember {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ChampionSummary {
+    #[serde(default)]
     pub id: i64,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub alias: String,
 }
 
