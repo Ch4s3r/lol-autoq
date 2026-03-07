@@ -1,7 +1,7 @@
 use anyhow::Result;
 use inquire::{InquireError, Select, Text};
 
-use crate::config::{Config, LanePreferences};
+use crate::config::Config;
 
 const BACK: &str = "← Back";
 const SAVE_EXIT: &str = "✓ Save & Exit";
@@ -15,7 +15,7 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
     println!();
 
     loop {
-        let options = position_menu_options(&config.preferences);
+        let options = position_menu_options(config);
         let selection = match Select::new("Select a position to configure:", options).prompt() {
             Ok(s) => s,
             Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
@@ -43,14 +43,16 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
 // --------------------------------------------------------------------------
 
 /// Build the top-level position list, appending the current pick order as a hint.
-fn position_menu_options(prefs: &LanePreferences) -> Vec<String> {
-    let positions = [
+fn position_menu_options(config: &Config) -> Vec<String> {
+    let prefs = &config.preferences;
+    let positions: &[(&str, &Vec<String>)] = &[
         ("Top", &prefs.top),
         ("Jungle", &prefs.jungle),
         ("Mid", &prefs.mid),
         ("Bot", &prefs.bot),
         ("Support", &prefs.support),
         ("Fill", &prefs.fill),
+        ("Bans", &config.bans),
     ];
 
     let mut options: Vec<String> = positions
@@ -67,7 +69,6 @@ fn position_menu_options(prefs: &LanePreferences) -> Vec<String> {
     options.push(SAVE_EXIT.to_string());
     options
 }
-
 /// Interactive editor for a single position's champion list.
 fn edit_position(
     config: &mut Config,
@@ -309,6 +310,7 @@ fn champions_for_position_mut<'a>(config: &'a mut Config, position: &str) -> &'a
         "Mid" => &mut config.preferences.mid,
         "Bot" => &mut config.preferences.bot,
         "Support" => &mut config.preferences.support,
+        "Bans" => &mut config.bans,
         _ => &mut config.preferences.fill,
     }
 }

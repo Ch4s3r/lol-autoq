@@ -12,14 +12,16 @@ use clap::Parser as _;
 use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
 
-use champion_select::{build_champion_map, handle_champion_select};
+use champion_select::{build_champion_map, handle_ban_phase, handle_champion_select};
 use cli::{Cli, Command};
 use config::Config;
 use lcu::{LcuClient, LockfileData};
 
 /// How long to wait between polls when the client is not running.
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
-/// Active phases: ready check and champ select need fast reaction.
+/// Champion select: react as fast as possible for ban/pick hovers.
+const POLL_CHAMPSELECT: Duration = Duration::from_millis(100);
+/// Ready check and other active phases: fast but not extreme.
 const POLL_FAST: Duration = Duration::from_millis(500);
 /// Idle phases: lobby / post-game, nothing time-sensitive.
 const POLL_IDLE: Duration = Duration::from_secs(3);
@@ -29,8 +31,10 @@ const POLL_INGAME: Duration = Duration::from_secs(30);
 /// Return the appropriate poll interval for a given gameflow phase.
 fn poll_interval(phase: &str) -> Duration {
     match phase {
-        // Time-critical: must react within a second.
-        "Matchmaking" | "ReadyCheck" | "ChampSelect" | "GameStart" => POLL_FAST,
+        // Ban/pick hovers need sub-second reaction.
+        "ChampSelect" => POLL_CHAMPSELECT,
+        // Ready check and game-start: fast but not maximum.
+        "Matchmaking" | "ReadyCheck" | "GameStart" => POLL_FAST,
         // Active game: nothing actionable, wake up rarely.
         "InProgress" => POLL_INGAME,
         // Lobby, post-game, unknown: moderate cadence.
@@ -111,6 +115,7 @@ async fn main() -> Result<()> {
             info!("  Bot:     {}", config.preferences.bot.join(" -> "));
             info!("  Support: {}", config.preferences.support.join(" -> "));
             info!("  Fill:    {}", config.preferences.fill.join(" -> "));
+            info!("  Bans:    {}", config.bans.join(" -> "));
             info!("");
             info!("Waiting for the League of Legends client to start...");
 
@@ -194,6 +199,7 @@ async fn poll_loop(
 ) -> Result<()> {
     let mut last_phase = String::new();
     let mut ready_check_accepted = false;
+    let mut ban_completed = false;
     let mut champ_locked = false;
 
     loop {
@@ -204,6 +210,7 @@ async fn poll_loop(
             last_phase = phase.clone();
             // Reset per-phase state when we transition.
             ready_check_accepted = false;
+            ban_completed = false;
             champ_locked = false;
         }
 
@@ -238,31 +245,49 @@ async fn poll_loop(
             }
 
             "ChampSelect" => {
-                if !champ_locked {
+                if !ban_completed || !champ_locked {
                     let session = match client.get_champ_select_session().await {
                         Ok(s) => s,
                         Err(e) => {
                             warn!(error = %e, "Could not read champ select session");
-                            sleep(POLL_FAST).await;
+                            sleep(POLL_CHAMPSELECT).await;
                             continue;
                         }
                     };
 
-                    match handle_champion_select(
-                        client,
-                        &session,
-                        config,
-                        champion_map,
-                        display_names,
-                    )
-                    .await
-                    {
-                        Ok(locked) => {
-                            if locked {
-                                champ_locked = true;
-                            }
+                    if !ban_completed {
+                        match handle_ban_phase(
+                            client,
+                            &session,
+                            config,
+                            champion_map,
+                            display_names,
+                        )
+                        .await
+                        {
+                            Ok(true) => ban_completed = true,
+                            Ok(false) => {}
+                            Err(e) => warn!(error = %e, "Ban phase error"),
                         }
-                        Err(e) => warn!(error = %e, "Champion select error"),
+                    }
+
+                    if !champ_locked {
+                        match handle_champion_select(
+                            client,
+                            &session,
+                            config,
+                            champion_map,
+                            display_names,
+                        )
+                        .await
+                        {
+                            Ok(locked) => {
+                                if locked {
+                                    champ_locked = true;
+                                }
+                            }
+                            Err(e) => warn!(error = %e, "Champion select error"),
+                        }
                     }
                 }
             }

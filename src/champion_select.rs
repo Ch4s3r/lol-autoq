@@ -35,6 +35,97 @@ fn friendly_position(pos: &str) -> &'static str {
     }
 }
 
+/// Return the single ban action that belongs to `local_player_cell_id`
+/// and is currently in-progress and not yet completed.
+pub fn find_active_ban_action(session: &ChampSelectSession) -> Option<&Action> {
+    session.actions.iter().flatten().find(|a| {
+        a.actor_cell_id == session.local_player_cell_id
+            && a.action_type == "ban"
+            && a.is_in_progress
+            && !a.completed
+    })
+}
+
+/// Ban phase handler.
+/// - Hovers the highest-priority available ban immediately.
+/// - Locks the ban in when the timer reaches <= BAN_AT_MS.
+///
+/// Returns `true` when the ban was completed, `false` when still waiting.
+pub async fn handle_ban_phase(
+    client: &LcuClient,
+    session: &ChampSelectSession,
+    config: &Config,
+    champion_map: &HashMap<String, i64>,
+    display_names: &HashMap<i64, String>,
+) -> Result<bool> {
+    const BAN_AT_MS: i64 = 3_000;
+
+    let action = match find_active_ban_action(session) {
+        Some(a) => a,
+        None => return Ok(false),
+    };
+
+    if config.bans.is_empty() {
+        warn!("no ban preferences configured — add some via `lol-autoq configure`");
+        return Ok(false);
+    }
+
+    // Champions already banned by either team — we cannot ban these again.
+    let already_banned: HashSet<i64> = session
+        .bans
+        .my_team_bans
+        .iter()
+        .chain(session.bans.their_team_bans.iter())
+        .copied()
+        .collect();
+
+    let (chosen_id, chosen_name) = config
+        .bans
+        .iter()
+        .find_map(|pref_name| {
+            let key = pref_name.to_ascii_lowercase();
+            match champion_map.get(&key) {
+                None => {
+                    trace!(champion = %pref_name, "ban target not found in game data — check spelling");
+                    None
+                }
+                Some(&id) if already_banned.contains(&id) => {
+                    trace!(champion = %pref_name, "already banned — skipping");
+                    None
+                }
+                Some(&id) => {
+                    let name = display_names
+                        .get(&id)
+                        .map(String::as_str)
+                        .unwrap_or(pref_name)
+                        .to_owned();
+                    Some((id, name))
+                }
+            }
+        })
+        .ok_or_else(|| anyhow!("All preferred bans are already banned — add more options"))?;
+
+    let time_left_ms = session.timer.adjusted_time_left_ms;
+
+    if action.champion_id != chosen_id {
+        info!(
+            champion = %chosen_name,
+            ban_order = %config.bans.join(" -> "),
+            "Hovering ban..."
+        );
+        client.hover_champion(action.id, chosen_id).await?;
+    }
+
+    if time_left_ms <= BAN_AT_MS {
+        info!(champion = %chosen_name, time_left_ms, "Banning!");
+        client.lock_champion(action.id, chosen_id).await?;
+        Ok(true)
+    } else {
+        trace!(time_left_ms, ban_at_ms = BAN_AT_MS, "waiting to ban");
+        Ok(false)
+    }
+}
+
 /// Return the single pick action that belongs to `local_player_cell_id`
 /// and is currently in-progress and not yet completed.
 pub fn find_active_pick_action(session: &ChampSelectSession) -> Option<&Action> {

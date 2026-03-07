@@ -9,6 +9,9 @@ const CONFIG_FILE: &str = "config.toml";
 pub struct Config {
     /// Override the lockfile path. If None, common Windows paths are scanned.
     pub lockfile_path: Option<String>,
+    /// Champions to ban, in priority order (first = most preferred ban).
+    #[serde(default)]
+    pub bans: Vec<String>,
     pub preferences: LanePreferences,
 }
 
@@ -29,6 +32,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             lockfile_path: None,
+            bans: vec!["Zed".into(), "Yasuo".into(), "Yone".into()],
             preferences: LanePreferences {
                 top: vec!["Darius".into(), "Garen".into(), "Malphite".into()],
                 jungle: vec!["Vi".into(), "Warwick".into(), "Amumu".into()],
