@@ -124,13 +124,11 @@ impl LcuClient {
 
     async fn post_no_body(&self, path: &str) -> Result<()> {
         let url = format!("{}{}", self.base_url, path);
-        trace!(method = "POST", %url, "sending request");
+        trace!(method = "POST", %url, "sending request (no body)");
         let resp = self
             .client
             .post(&url)
             .header("Authorization", &self.auth_header)
-            .header("Content-Type", "application/json")
-            .body("{}")
             .send()
             .await
             .with_context(|| format!("POST {} failed", path))?;
@@ -211,22 +209,12 @@ impl LcuClient {
         .await
     }
 
-    /// Lock in a champion: first PATCH to set championId + completed=true,
-    /// then POST to /complete to trigger the actual lock-in on the server.
-    /// Both steps are required — PATCH alone does not disable the button.
+    /// Lock in a champion:
+    /// 1. PATCH to ensure championId is set (hover, completed=false)
+    /// 2. POST to /complete to trigger the actual lock-in
     pub async fn lock_champion(&self, action_id: i64, champion_id: i64) -> Result<()> {
-        #[derive(Serialize)]
-        struct Body {
-            #[serde(rename = "championId")]
-            champion_id: i64,
-            completed: bool,
-        }
-        // Step 1: mark completed via PATCH
-        self.patch_json(
-            &format!("/lol-champ-select/v1/session/actions/{}", action_id),
-            &Body { champion_id, completed: true },
-        )
-        .await?;
+        // Step 1: ensure champion is selected via PATCH (hover)
+        self.hover_champion(action_id, champion_id).await?;
         // Step 2: trigger lock-in via POST /complete
         self.post_no_body(&format!(
             "/lol-champ-select/v1/session/actions/{}/complete",

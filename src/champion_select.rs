@@ -117,8 +117,9 @@ pub async fn handle_ban_phase(
     }
 
     if time_left_ms <= BAN_AT_MS {
-        info!(champion = %chosen_name, time_left_ms, "Banning!");
+        info!(champion = %chosen_name, time_left_ms, action_id = action.id, "Banning!");
         client.lock_champion(action.id, chosen_id).await?;
+        info!(champion = %chosen_name, "Ban complete!");
         Ok(true)
     } else {
         trace!(time_left_ms, ban_at_ms = BAN_AT_MS, "waiting to ban");
@@ -241,8 +242,14 @@ pub async fn handle_champion_select(
 
     // Lock in only once the timer reaches 5 seconds or less.
     if time_left_ms <= LOCK_AT_MS {
-        info!(champion = %chosen_name, time_left_ms, "Locking in!");
+        info!(
+            champion = %chosen_name,
+            time_left_ms,
+            action_id = action.id,
+            "Locking in!"
+        );
         client.lock_champion(action.id, chosen_id).await?;
+        info!(champion = %chosen_name, "Lock-in complete!");
         Ok(true)
     } else {
         trace!(time_left_ms, total_ms = session.timer.total_time_ms, lock_at_ms = LOCK_AT_MS, "waiting to lock in");
