@@ -172,13 +172,29 @@ async fn poll_loop(
         match phase.as_str() {
             "ReadyCheck" => {
                 if !ready_check_accepted {
-                    trace!("attempting to accept ready check");
-                    match client.accept_ready_check().await {
-                        Ok(()) => {
-                            info!("Queue accepted! Getting into champ select...");
-                            ready_check_accepted = true;
+                    match client.get_ready_check().await {
+                        Ok(rc) if rc.max_secs > 0.0 && rc.elapsed_secs >= rc.max_secs / 2.0 => {
+                            info!(
+                                elapsed = rc.elapsed_secs,
+                                max = rc.max_secs,
+                                "Accepting queue at halfway mark..."
+                            );
+                            match client.accept_ready_check().await {
+                                Ok(()) => {
+                                    info!("Queue accepted!");
+                                    ready_check_accepted = true;
+                                }
+                                Err(e) => warn!(error = %e, "Could not accept queue"),
+                            }
                         }
-                        Err(e) => warn!(error = %e, "Could not accept queue"),
+                        Ok(rc) => {
+                            trace!(
+                                elapsed = rc.elapsed_secs,
+                                max = rc.max_secs,
+                                "waiting for halfway mark to accept"
+                            );
+                        }
+                        Err(e) => warn!(error = %e, "Could not read ready-check status"),
                     }
                 }
             }
@@ -200,13 +216,11 @@ async fn poll_loop(
                         config,
                         champion_map,
                         display_names,
-                        /* auto_lock = */ true,
                     )
                     .await
                     {
-                        Ok(()) => {
-                            // Mark as locked only if a pick action was in progress.
-                            if champion_select::find_active_pick_action(&session).is_some() {
+                        Ok(locked) => {
+                            if locked {
                                 champ_locked = true;
                             }
                         }

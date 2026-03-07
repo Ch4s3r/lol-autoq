@@ -69,18 +69,22 @@ pub fn local_assigned_position(session: &ChampSelectSession) -> &str {
         .unwrap_or("")
 }
 
-/// Core champion-select handler. Hovers then optionally locks in our pick.
+/// Core champion-select handler.
+/// - Hovers immediately so the team can see the intent.
+/// - Locks in only when `time_left_ms` drops to <= `LOCK_AT_MS`.
+///
+/// Returns `true` when the champion was locked in, `false` when still waiting.
 pub async fn handle_champion_select(
     client: &LcuClient,
     session: &ChampSelectSession,
     config: &Config,
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
-    auto_lock: bool,
-) -> Result<()> {
+) -> Result<bool> {
+    const LOCK_AT_MS: i64 = 5_000;
     let action = match find_active_pick_action(session) {
         Some(a) => a,
-        None => return Ok(()), // nothing to do yet
+        None => return Ok(false), // nothing to do yet
     };
 
     let raw_position = local_assigned_position(session);
@@ -92,7 +96,7 @@ pub async fn handle_champion_select(
             position = %position_label,
             "no champion preferences configured — please edit config.toml"
         );
-        return Ok(());
+        return Ok(false);
     }
 
     info!(
@@ -136,16 +140,21 @@ pub async fn handle_champion_select(
 
     trace!(champion_id = chosen_id, champion = %chosen_name, "champion selected");
 
-    // Only hover if we are not already on this champion.
+    let time_left_ms = session.timer.adjusted_time_left_ms;
+
+    // Always hover so teammates can see the pick intent.
     if action.champion_id != chosen_id {
-        info!(champion = %chosen_name, "Hovering...");
+        info!(champion = %chosen_name, time_left_ms, "Hovering...");
         client.hover_champion(action.id, chosen_id).await?;
     }
 
-    if auto_lock {
-        info!(champion = %chosen_name, "Locked in!");
-        client.lock_champion(action.id).await?;
+    // Lock in only once the timer reaches 5 seconds or less.
+    if time_left_ms <= LOCK_AT_MS {
+        info!(champion = %chosen_name, time_left_ms, "Locking in!");
+        client.lock_champion(action.id, chosen_id).await?;
+        Ok(true)
+    } else {
+        trace!(time_left_ms, lock_at_ms = LOCK_AT_MS, "waiting to lock in");
+        Ok(false)
     }
-
-    Ok(())
 }

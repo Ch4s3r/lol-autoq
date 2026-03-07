@@ -183,6 +183,11 @@ impl LcuClient {
             .await
     }
 
+    /// Fetch the current ready-check state including elapsed and max timer.
+    pub async fn get_ready_check(&self) -> Result<ReadyCheckStatus> {
+        self.get("/lol-matchmaking/v1/ready-check").await
+    }
+
     // ------------------------------------------------------------------
     // Champion Select
     // ------------------------------------------------------------------
@@ -191,26 +196,35 @@ impl LcuClient {
         self.get("/lol-champ-select/v1/session").await
     }
 
-    /// Hover (set) a champion without locking it in.
+    /// Hover (preview) a champion without locking it in.
     pub async fn hover_champion(&self, action_id: i64, champion_id: i64) -> Result<()> {
         #[derive(Serialize)]
         struct Body {
             #[serde(rename = "championId")]
             champion_id: i64,
+            completed: bool,
         }
         self.patch_json(
             &format!("/lol-champ-select/v1/session/actions/{}", action_id),
-            &Body { champion_id },
+            &Body { champion_id, completed: false },
         )
         .await
     }
 
-    /// Lock in a champion (complete the action).
-    pub async fn lock_champion(&self, action_id: i64) -> Result<()> {
-        self.post_no_body(&format!(
-            "/lol-champ-select/v1/session/actions/{}/complete",
-            action_id
-        ))
+    /// Lock in a champion by PATCHing with `completed: true` in one request.
+    /// Using the separate POST `/complete` endpoint is unreliable and leaves
+    /// the button clickable; a single PATCH mirrors what the client itself does.
+    pub async fn lock_champion(&self, action_id: i64, champion_id: i64) -> Result<()> {
+        #[derive(Serialize)]
+        struct Body {
+            #[serde(rename = "championId")]
+            champion_id: i64,
+            completed: bool,
+        }
+        self.patch_json(
+            &format!("/lol-champ-select/v1/session/actions/{}", action_id),
+            &Body { champion_id, completed: true },
+        )
         .await
     }
 
@@ -233,6 +247,8 @@ impl LcuClient {
 pub struct ChampSelectSession {
     #[serde(rename = "localPlayerCellId")]
     pub local_player_cell_id: i64,
+    /// Phase timer — used to decide when to lock in.
+    pub timer: PhaseTimer,
     /// 2-D array: outer = phase, inner = actions within that phase.
     pub actions: Vec<Vec<Action>>,
     #[serde(rename = "myTeam")]
@@ -282,4 +298,26 @@ pub struct ChampionSummary {
     pub id: i64,
     pub name: String,
     pub alias: String,
+}
+
+/// Timer info embedded in a champ-select session.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct PhaseTimer {
+    /// Milliseconds remaining in the current pick/ban phase.
+    #[serde(rename = "adjustedTimeLeftInPhase", default)]
+    pub adjusted_time_left_ms: i64,
+    /// Total milliseconds for the current phase.
+    #[serde(rename = "totalTimeInPhase", default)]
+    pub total_time_ms: i64,
+}
+
+/// Ready-check state returned by the matchmaking endpoint.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ReadyCheckStatus {
+    /// Seconds elapsed since the ready check appeared.
+    #[serde(rename = "timer", default)]
+    pub elapsed_secs: f64,
+    /// Total seconds the ready check lasts.
+    #[serde(rename = "maxTimer", default)]
+    pub max_secs: f64,
 }
