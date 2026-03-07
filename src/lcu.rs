@@ -222,17 +222,18 @@ impl LcuClient {
         .await
     }
 
-    /// Lock in a champion:
-    /// 1. PATCH to ensure championId is set (hover, completed=false)
-    /// 2. POST to /complete to trigger the actual lock-in
+    /// Lock in a champion by PATCHing with championId + completed=true.
     pub async fn lock_champion(&self, action_id: i64, champion_id: i64) -> Result<()> {
-        // Step 1: ensure champion is selected via PATCH (hover)
-        self.hover_champion(action_id, champion_id).await?;
-        // Step 2: trigger lock-in via POST /complete
-        self.post_no_body(&format!(
-            "/lol-champ-select/v1/session/actions/{}/complete",
-            action_id
-        ))
+        #[derive(Serialize)]
+        struct Body {
+            #[serde(rename = "championId")]
+            champion_id: i64,
+            completed: bool,
+        }
+        self.patch_json(
+            &format!("/lol-champ-select/v1/session/actions/{}", action_id),
+            &Body { champion_id, completed: true },
+        )
         .await
     }
 

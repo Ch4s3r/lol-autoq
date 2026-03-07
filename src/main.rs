@@ -267,7 +267,7 @@ async fn poll_loop(
                         {
                             Ok(true) => ban_completed = true,
                             Ok(false) => {}
-                            Err(e) => warn!(error = %e, "Ban phase error"),
+                            Err(e) => error!(error = %e, "Ban phase error"),
                         }
                     }
 
@@ -286,7 +286,7 @@ async fn poll_loop(
                                     champ_locked = true;
                                 }
                             }
-                            Err(e) => warn!(error = %e, "Champion select error"),
+                            Err(e) => error!(error = %e, "Champion select error"),
                         }
                     }
                 }
