@@ -1,5 +1,5 @@
 use anyhow::Result;
-use inquire::{InquireError, Select, Text};
+use inquire::{InquireError, MultiSelect, Select, Text};
 
 use crate::config::{Config, LanePreferences};
 
@@ -7,7 +7,7 @@ const BACK: &str = "← Back";
 const SAVE_EXIT: &str = "✓ Save & Exit";
 
 /// Entry point for the configure subcommand.
-pub fn run(config: &mut Config) -> Result<()> {
+pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<()> {
     println!();
     println!("  Champion Preference Configuration");
     println!("  Pick a position to edit, then manage your champion priority list.");
@@ -28,7 +28,7 @@ pub fn run(config: &mut Config) -> Result<()> {
 
         // Strip the summary suffix to get the bare position name.
         let position = selection.split_whitespace().next().unwrap_or("").to_string();
-        edit_position(config, &position)?;
+        edit_position(config, &position, champion_names.as_deref())?;
     }
 
     config.save()?;
@@ -69,7 +69,11 @@ fn position_menu_options(prefs: &LanePreferences) -> Vec<String> {
 }
 
 /// Interactive editor for a single position's champion list.
-fn edit_position(config: &mut Config, position: &str) -> Result<()> {
+fn edit_position(
+    config: &mut Config,
+    position: &str,
+    champion_names: Option<&[String]>,
+) -> Result<()> {
     loop {
         let list = champions_for_position_mut(config, position);
 
@@ -84,9 +88,9 @@ fn edit_position(config: &mut Config, position: &str) -> Result<()> {
         }
         println!();
 
-        let mut actions = vec!["Add champion".to_string()];
+        let mut actions = vec!["Add champion(s)".to_string()];
         if !list.is_empty() {
-            actions.push("Remove champion".to_string());
+            actions.push("Remove champion(s)".to_string());
             if list.len() > 1 {
                 actions.push("Move champion up".to_string());
                 actions.push("Move champion down".to_string());
@@ -94,16 +98,15 @@ fn edit_position(config: &mut Config, position: &str) -> Result<()> {
         }
         actions.push(BACK.to_string());
 
-        let action =
-            match Select::new("What would you like to do?", actions).prompt() {
-                Ok(a) => a,
-                Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
-                Err(e) => return Err(e.into()),
-            };
+        let action = match Select::new("What would you like to do?", actions).prompt() {
+            Ok(a) => a,
+            Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
+            Err(e) => return Err(e.into()),
+        };
 
         match action.as_str() {
-            "Add champion" => action_add(config, position)?,
-            "Remove champion" => action_remove(config, position)?,
+            "Add champion(s)" => action_add(config, position, champion_names)?,
+            "Remove champion(s)" => action_remove(config, position)?,
             "Move champion up" => action_move(config, position, -1)?,
             "Move champion down" => action_move(config, position, 1)?,
             _ => break, // Back
@@ -112,40 +115,107 @@ fn edit_position(config: &mut Config, position: &str) -> Result<()> {
     Ok(())
 }
 
-fn action_add(config: &mut Config, position: &str) -> Result<()> {
-    let name = match Text::new("Champion name to add:").prompt() {
-        Ok(n) => n.trim().to_string(),
-        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    if name.is_empty() {
-        println!("  (empty name — skipped)");
-        return Ok(());
-    }
+fn action_add(
+    config: &mut Config,
+    position: &str,
+    champion_names: Option<&[String]>,
+) -> Result<()> {
+    match champion_names {
+        Some(all_names) => {
+            // Build a list of champions not already in this position's list.
+            let current = champions_for_position_mut(config, position);
+            let available: Vec<String> = all_names
+                .iter()
+                .filter(|n| !current.iter().any(|c| c.eq_ignore_ascii_case(n)))
+                .cloned()
+                .collect();
 
-    let list = champions_for_position_mut(config, position);
-    if list.iter().any(|c| c.eq_ignore_ascii_case(&name)) {
-        println!("  '{name}' is already in the list.");
-    } else {
-        list.push(name.clone());
-        println!("  Added '{name}'.");
+            if available.is_empty() {
+                println!("  All champions are already in the list.");
+                return Ok(());
+            }
+
+            let chosen =
+                match MultiSelect::new("Select champion(s) to add (type to filter):", available)
+                    .prompt()
+                {
+                    Ok(v) => v,
+                    Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                        return Ok(())
+                    }
+                    Err(e) => return Err(e.into()),
+                };
+
+            if chosen.is_empty() {
+                println!("  (nothing selected)");
+                return Ok(());
+            }
+
+            let list = champions_for_position_mut(config, position);
+            for name in &chosen {
+                list.push(name.clone());
+            }
+            println!("  Added: {}.", chosen.join(", "));
+        }
+        None => {
+            // Fall back to free-text when the client isn't running.
+            let input = match Text::new("Champion name to add (comma-separated for multiple):").prompt() {
+                Ok(n) => n,
+                Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                    return Ok(())
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let names: Vec<String> = input
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            if names.is_empty() {
+                println!("  (empty input — skipped)");
+                return Ok(());
+            }
+
+            let list = champions_for_position_mut(config, position);
+            let mut added = Vec::new();
+            for name in names {
+                if list.iter().any(|c| c.eq_ignore_ascii_case(&name)) {
+                    println!("  '{name}' is already in the list — skipped.");
+                } else {
+                    list.push(name.clone());
+                    added.push(name);
+                }
+            }
+            if !added.is_empty() {
+                println!("  Added: {}.", added.join(", "));
+            }
+        }
     }
     Ok(())
 }
 
 fn action_remove(config: &mut Config, position: &str) -> Result<()> {
-    let list = champions_for_position_mut(config, position);
-    let options = list.clone();
+    let current = champions_for_position_mut(config, position).clone();
 
-    let chosen = match Select::new("Remove which champion?", options).prompt() {
-        Ok(c) => c,
-        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
+    let chosen =
+        match MultiSelect::new("Select champion(s) to remove:", current).prompt() {
+            Ok(v) => v,
+            Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+                return Ok(())
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+    if chosen.is_empty() {
+        println!("  (nothing selected)");
+        return Ok(());
+    }
 
     let list = champions_for_position_mut(config, position);
-    list.retain(|c| c != &chosen);
-    println!("  Removed '{chosen}'.");
+    list.retain(|c| !chosen.contains(c));
+    println!("  Removed: {}.", chosen.join(", "));
     Ok(())
 }
 

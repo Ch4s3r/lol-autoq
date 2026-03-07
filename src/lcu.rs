@@ -211,9 +211,9 @@ impl LcuClient {
         .await
     }
 
-    /// Lock in a champion by PATCHing with `completed: true` in one request.
-    /// Using the separate POST `/complete` endpoint is unreliable and leaves
-    /// the button clickable; a single PATCH mirrors what the client itself does.
+    /// Lock in a champion: first PATCH to set championId + completed=true,
+    /// then POST to /complete to trigger the actual lock-in on the server.
+    /// Both steps are required — PATCH alone does not disable the button.
     pub async fn lock_champion(&self, action_id: i64, champion_id: i64) -> Result<()> {
         #[derive(Serialize)]
         struct Body {
@@ -221,10 +221,17 @@ impl LcuClient {
             champion_id: i64,
             completed: bool,
         }
+        // Step 1: mark completed via PATCH
         self.patch_json(
             &format!("/lol-champ-select/v1/session/actions/{}", action_id),
             &Body { champion_id, completed: true },
         )
+        .await?;
+        // Step 2: trigger lock-in via POST /complete
+        self.post_no_body(&format!(
+            "/lol-champ-select/v1/session/actions/{}/complete",
+            action_id
+        ))
         .await
     }
 

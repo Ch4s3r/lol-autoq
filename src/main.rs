@@ -45,7 +45,45 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Configure => {
             let mut config = Config::load_or_create()?;
-            configure::run(&mut config)?;
+
+            // Try to load the champion list from the running League client.
+            // If the client isn't open we fall back to free-text input silently.
+            let champion_names: Option<Vec<String>> = {
+                let lockfile = LockfileData::find(config.lockfile_path.as_deref()).ok();
+                if let Some(lf) = lockfile {
+                    if let Ok(client) = LcuClient::new(&lf) {
+                        match client.get_champion_summary().await {
+                            Ok(summaries) => {
+                                let mut names: Vec<String> = summaries
+                                    .into_iter()
+                                    .filter(|c| c.id > 0 && !c.name.is_empty())
+                                    .map(|c| c.name)
+                                    .collect();
+                                names.sort();
+                                Some(names)
+                            }
+                            Err(_) => None,
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            println!();
+            match &champion_names {
+                Some(names) => println!(
+                    "  Loaded {} champions from the League client.",
+                    names.len()
+                ),
+                None => println!(
+                    "  League client not running — champion names will use free-text input."
+                ),
+            }
+
+            configure::run(&mut config, champion_names)?;
         }
 
         Command::Start => {

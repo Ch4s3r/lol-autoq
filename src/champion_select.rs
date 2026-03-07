@@ -99,12 +99,6 @@ pub async fn handle_champion_select(
         return Ok(false);
     }
 
-    info!(
-        position = %position_label,
-        pick_order = %prefs.join(" -> "),
-        "champion select"
-    );
-
     let unavailable = unavailable_champion_ids(session);
     trace!(ids = ?unavailable, "unavailable champions");
 
@@ -114,11 +108,11 @@ pub async fn handle_champion_select(
             let key = pref_name.to_ascii_lowercase();
             match champion_map.get(&key) {
                 None => {
-                    warn!(champion = %pref_name, "not found in game data — check spelling in config.toml");
+                    trace!(champion = %pref_name, "not found in game data — check spelling in config.toml");
                     None
                 }
                 Some(&id) if unavailable.contains(&id) => {
-                    info!(champion = %pref_name, "banned or already picked — skipping");
+                    trace!(champion = %pref_name, "banned or already picked — skipping");
                     None
                 }
                 Some(&id) => {
@@ -142,8 +136,14 @@ pub async fn handle_champion_select(
 
     let time_left_ms = session.timer.adjusted_time_left_ms;
 
-    // Always hover so teammates can see the pick intent.
+    // Hover once — log position/pick order only on the first hover so it doesn't
+    // spam every poll cycle while waiting to lock in.
     if action.champion_id != chosen_id {
+        info!(
+            position = %position_label,
+            pick_order = %prefs.join(" -> "),
+            "champion select"
+        );
         info!(champion = %chosen_name, time_left_ms, "Hovering...");
         client.hover_champion(action.id, chosen_id).await?;
     }
@@ -154,7 +154,7 @@ pub async fn handle_champion_select(
         client.lock_champion(action.id, chosen_id).await?;
         Ok(true)
     } else {
-        trace!(time_left_ms, lock_at_ms = LOCK_AT_MS, "waiting to lock in");
+        trace!(time_left_ms, total_ms = session.timer.total_time_ms, lock_at_ms = LOCK_AT_MS, "waiting to lock in");
         Ok(false)
     }
 }
