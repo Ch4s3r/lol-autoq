@@ -58,8 +58,6 @@ pub async fn handle_ban_phase(
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
 ) -> Result<bool> {
-    const BAN_AT_MS: i64 = 3_000;
-
     let action = match find_active_ban_action(session) {
         Some(a) => a,
         None => return Ok(false),
@@ -105,26 +103,16 @@ pub async fn handle_ban_phase(
         })
         .ok_or_else(|| anyhow!("All preferred bans are already banned — add more options"))?;
 
-    let time_left_ms = session.timer.adjusted_time_left_ms;
-
-    if action.champion_id != chosen_id {
-        info!(
-            champion = %chosen_name,
-            ban_order = %config.bans.join(" -> "),
-            "Hovering ban..."
-        );
-        client.hover_champion(action.id, chosen_id).await?;
-    }
-
-    if time_left_ms <= BAN_AT_MS {
-        info!(champion = %chosen_name, time_left_ms, action_id = action.id, "Banning!");
-        client.lock_champion(action.id, chosen_id).await?;
-        info!(champion = %chosen_name, "Ban complete!");
-        Ok(true)
-    } else {
-        trace!(time_left_ms, ban_at_ms = BAN_AT_MS, "waiting to ban");
-        Ok(false)
-    }
+    // Immediately ban
+    info!(
+        champion = %chosen_name,
+        action_id = action.id,
+        ban_order = %config.bans.join(" -> "),
+        "Banning immediately!"
+    );
+    client.lock_champion(action.id, chosen_id).await?;
+    info!(champion = %chosen_name, "Ban complete!");
+    Ok(true)
 }
 
 /// Return the single pick action that belongs to `local_player_cell_id`
@@ -162,8 +150,7 @@ pub fn local_assigned_position(session: &ChampSelectSession) -> &str {
 }
 
 /// Core champion-select handler.
-/// - Hovers immediately so the team can see the intent.
-/// - Locks in only when `time_left_ms` drops to <= `LOCK_AT_MS`.
+/// - Immediately locks in the highest-priority available champion.
 ///
 /// Returns `true` when the champion was locked in, `false` when still waiting.
 pub async fn handle_champion_select(
@@ -173,7 +160,6 @@ pub async fn handle_champion_select(
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
 ) -> Result<bool> {
-    const LOCK_AT_MS: i64 = 5_000;
     let action = match find_active_pick_action(session) {
         Some(a) => a,
         None => return Ok(false), // nothing to do yet
@@ -226,33 +212,15 @@ pub async fn handle_champion_select(
 
     trace!(champion_id = chosen_id, champion = %chosen_name, "champion selected");
 
-    let time_left_ms = session.timer.adjusted_time_left_ms;
-
-    // Hover once — log position/pick order only on the first hover so it doesn't
-    // spam every poll cycle while waiting to lock in.
-    if action.champion_id != chosen_id {
-        info!(
-            position = %position_label,
-            pick_order = %prefs.join(" -> "),
-            "champion select"
-        );
-        info!(champion = %chosen_name, time_left_ms, "Hovering...");
-        client.hover_champion(action.id, chosen_id).await?;
-    }
-
-    // Lock in only once the timer reaches 5 seconds or less.
-    if time_left_ms <= LOCK_AT_MS {
-        info!(
-            champion = %chosen_name,
-            time_left_ms,
-            action_id = action.id,
-            "Locking in!"
-        );
-        client.lock_champion(action.id, chosen_id).await?;
-        info!(champion = %chosen_name, "Lock-in complete!");
-        Ok(true)
-    } else {
-        trace!(time_left_ms, total_ms = session.timer.total_time_ms, lock_at_ms = LOCK_AT_MS, "waiting to lock in");
-        Ok(false)
-    }
+    // Immediately lock in
+    info!(
+        position = %position_label,
+        champion = %chosen_name,
+        action_id = action.id,
+        pick_order = %prefs.join(" -> "),
+        "Locking in immediately!"
+    );
+    client.lock_champion(action.id, chosen_id).await?;
+    info!(champion = %chosen_name, "Lock-in complete!");
+    Ok(true)
 }
