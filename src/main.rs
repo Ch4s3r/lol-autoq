@@ -303,7 +303,28 @@ async fn poll_loop(
 async fn load_champion_map(
     client: &LcuClient,
 ) -> Result<(HashMap<String, i64>, HashMap<i64, String>)> {
-    let summaries = client.get_champion_summary().await?;
-    Ok(build_champion_map(&summaries))
+    // The champion data endpoint may not be ready immediately after the client
+    // starts.  Retry a few times with increasing delays before giving up.
+    const MAX_RETRIES: u32 = 10;
+    const INITIAL_DELAY: Duration = Duration::from_secs(2);
+
+    let mut last_err = None;
+    for attempt in 0..MAX_RETRIES {
+        match client.get_champion_summary().await {
+            Ok(summaries) => return Ok(build_champion_map(&summaries)),
+            Err(e) => {
+                let delay = INITIAL_DELAY * 2u32.pow(attempt.min(4));
+                warn!(
+                    attempt = attempt + 1,
+                    max = MAX_RETRIES,
+                    "Champion data not ready yet, retrying in {:.0?}...",
+                    delay
+                );
+                last_err = Some(e);
+                sleep(delay).await;
+            }
+        }
+    }
+    Err(last_err.unwrap())
 }
 
