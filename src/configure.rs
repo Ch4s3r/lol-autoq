@@ -1,22 +1,45 @@
 use anyhow::Result;
 use inquire::{InquireError, Select, Text};
 
-use crate::config::Config;
+use crate::config::{Config, INSTANT};
 
 const BACK: &str = "← Back";
 const SAVE_EXIT: &str = "✓ Save & Exit";
 
+fn format_threshold(secs: u64) -> String {
+    if secs == INSTANT {
+        "Instant".to_string()
+    } else {
+        format!("≤ {secs}s")
+    }
+}
+
 /// Entry point for the configure subcommand.
 pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<()> {
     println!();
-    println!("  Champion Preference Configuration");
-    println!("  Pick a position to edit, then manage your champion priority list.");
+    println!("  LoL Auto-Queue Configuration");
     println!("  Changes are saved when you choose \"Save & Exit\".");
     println!();
 
     loop {
-        let options = position_menu_options(config);
-        let selection = match Select::new("Select a position to configure:", options).prompt() {
+        let options = vec![
+            format!(
+                "Champion Picks  {}",
+                picks_summary(config)
+            ),
+            format!(
+                "Bans            {}",
+                if config.bans.is_empty() { "(none configured)".to_string() } else { config.bans.join(" → ") }
+            ),
+            format!(
+                "Lock-in Timers  ban {} / pick {}",
+                format_threshold(config.lock_in_ban_secs),
+                format_threshold(config.lock_in_pick_secs)
+            ),
+            SAVE_EXIT.to_string(),
+        ];
+
+        let selection = match Select::new("What would you like to configure?", options).prompt() {
             Ok(s) => s,
             Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
             Err(e) => return Err(e.into()),
@@ -24,16 +47,13 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
 
         if selection.starts_with("✓") {
             break;
-        }
-
-        if selection.starts_with("Timers") {
+        } else if selection.starts_with("Champion Picks") {
+            edit_picks_menu(config, champion_names.as_deref())?;
+        } else if selection.starts_with("Bans") {
+            edit_position(config, "Bans", champion_names.as_deref())?;
+        } else if selection.starts_with("Lock-in Timers") {
             edit_timers(config)?;
-            continue;
         }
-
-        // Strip the summary suffix to get the bare position name.
-        let position = selection.split_whitespace().next().unwrap_or("").to_string();
-        edit_position(config, &position, champion_names.as_deref())?;
     }
 
     config.save()?;
@@ -44,39 +64,60 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
 }
 
 // --------------------------------------------------------------------------
-// Helpers
+// Picks submenu
 // --------------------------------------------------------------------------
 
-/// Build the top-level position list, appending the current pick order as a hint.
-fn position_menu_options(config: &Config) -> Vec<String> {
+fn picks_summary(config: &Config) -> String {
     let prefs = &config.preferences;
-    let positions: &[(&str, &Vec<String>)] = &[
-        ("Top", &prefs.top),
-        ("Jungle", &prefs.jungle),
-        ("Mid", &prefs.mid),
-        ("Bot", &prefs.bot),
-        ("Support", &prefs.support),
-        ("Fill", &prefs.fill),
-        ("Bans", &config.bans),
+    let counts = [
+        prefs.top.len(), prefs.jungle.len(), prefs.mid.len(),
+        prefs.bot.len(), prefs.support.len(), prefs.fill.len(),
     ];
+    let configured = counts.iter().filter(|&&c| c > 0).count();
+    format!("{}/6 positions configured", configured)
+}
 
-    let mut options: Vec<String> = positions
-        .iter()
-        .map(|(name, champs)| {
-            if champs.is_empty() {
-                format!("{name:<8}  (none configured)")
-            } else {
-                format!("{name:<8}  {}", champs.join(" → "))
-            }
-        })
-        .collect();
+fn edit_picks_menu(
+    config: &mut Config,
+    champion_names: Option<&[String]>,
+) -> Result<()> {
+    loop {
+        let prefs = &config.preferences;
+        let positions: &[(&str, &Vec<String>)] = &[
+            ("Top",     &prefs.top),
+            ("Jungle",  &prefs.jungle),
+            ("Mid",     &prefs.mid),
+            ("Bot",     &prefs.bot),
+            ("Support", &prefs.support),
+            ("Fill",    &prefs.fill),
+        ];
 
-    options.push(format!(
-        "Timers   ban ≤ {}s / pick ≤ {}s",
-        config.lock_in_ban_secs, config.lock_in_pick_secs
-    ));
-    options.push(SAVE_EXIT.to_string());
-    options
+        let mut options: Vec<String> = positions
+            .iter()
+            .map(|(name, champs)| {
+                if champs.is_empty() {
+                    format!("{name:<8}  (none configured)")
+                } else {
+                    format!("{name:<8}  {}", champs.join(" → "))
+                }
+            })
+            .collect();
+        options.push(BACK.to_string());
+
+        let selection = match Select::new("Select a position to configure:", options).prompt() {
+            Ok(s) => s,
+            Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
+            Err(e) => return Err(e.into()),
+        };
+
+        if selection.starts_with("←") {
+            break;
+        }
+
+        let position = selection.split_whitespace().next().unwrap_or("").to_string();
+        edit_position(config, &position, champion_names)?;
+    }
+    Ok(())
 }
 /// Interactive editor for a single position's champion list.
 fn edit_position(
@@ -316,49 +357,88 @@ fn action_move(config: &mut Config, position: &str, delta: i32) -> Result<()> {
 fn edit_timers(config: &mut Config) -> Result<()> {
     println!();
     println!("  Lock-in Timers");
-    println!("  The bot hovers your champion immediately, then locks in when");
-    println!("  the remaining time drops to the configured threshold.");
+    println!("  'Instant' locks in as soon as the phase starts (champion is hovered first).");
+    println!("  A number locks in when that many seconds or fewer remain.");
+    println!("  0 = lock at the very last moment.");
     println!();
-    println!("  Current:  ban ≤ {}s  /  pick ≤ {}s", config.lock_in_ban_secs, config.lock_in_pick_secs);
+    println!("  Current:  ban {}  /  pick {}",
+        format_threshold(config.lock_in_ban_secs),
+        format_threshold(config.lock_in_pick_secs));
     println!();
 
-    let ban_input = match Text::new(&format!(
-        "Lock in ban when timer ≤ ___ seconds (current: {}):",
-        config.lock_in_ban_secs
-    ))
-    .with_default(&config.lock_in_ban_secs.to_string())
-    .prompt()
-    {
-        Ok(v) => v,
-        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    if let Ok(secs) = ban_input.trim().parse::<u64>() {
-        config.lock_in_ban_secs = secs;
-        println!("  Ban lock-in set to ≤ {secs}s");
-    } else {
-        println!("  Invalid number — keeping current value.");
-    }
-
-    let pick_input = match Text::new(&format!(
-        "Lock in pick when timer ≤ ___ seconds (current: {}):",
-        config.lock_in_pick_secs
-    ))
-    .with_default(&config.lock_in_pick_secs.to_string())
-    .prompt()
-    {
-        Ok(v) => v,
-        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => return Ok(()),
-        Err(e) => return Err(e.into()),
-    };
-    if let Ok(secs) = pick_input.trim().parse::<u64>() {
-        config.lock_in_pick_secs = secs;
-        println!("  Pick lock-in set to ≤ {secs}s");
-    } else {
-        println!("  Invalid number — keeping current value.");
-    }
-
+    config.lock_in_ban_secs  = prompt_threshold("Ban",  config.lock_in_ban_secs)?;
+    config.lock_in_pick_secs = prompt_threshold("Pick", config.lock_in_pick_secs)?;
     Ok(())
+}
+
+const TIMER_INSTANT: &str  = "Instant (lock as soon as hovered)";
+const TIMER_CUSTOM: &str   = "Custom (enter seconds)";
+
+fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
+    let current_str = format_threshold(current);
+    let options = vec![
+        TIMER_INSTANT.to_string(),
+        "0  (last possible moment)".to_string(),
+        "3s".to_string(),
+        "5s".to_string(),
+        "10s".to_string(),
+        "15s".to_string(),
+        "20s".to_string(),
+        TIMER_CUSTOM.to_string(),
+    ];
+
+    let selection = match Select::new(
+        &format!("{label} lock-in timing (current: {current_str}):"),
+        options,
+    ).prompt() {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+            println!("  Keeping current value ({current_str}).");
+            return Ok(current);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    if selection == TIMER_INSTANT {
+        println!("  {label} lock-in set to Instant.");
+        return Ok(INSTANT);
+    }
+
+    if selection.starts_with('0') {
+        println!("  {label} lock-in set to last possible moment (0s).");
+        return Ok(0);
+    }
+
+    // Fixed shortcut values like "5s"
+    if selection != TIMER_CUSTOM
+        && let Ok(secs) = selection.trim_end_matches('s').parse::<u64>() {
+            println!("  {label} lock-in set to ≤ {secs}s.");
+            return Ok(secs);
+        }
+
+    // Custom free-text
+    let input = match Text::new("Enter seconds (0 = last moment, higher = earlier lock-in):")
+        .with_default(&if current == INSTANT { "5".to_string() } else { current.to_string() })
+        .prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+            println!("  Keeping current value ({current_str}).");
+            return Ok(current);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    match input.trim().parse::<u64>() {
+        Ok(secs) => {
+            println!("  {label} lock-in set to ≤ {secs}s.");
+            Ok(secs)
+        }
+        Err(_) => {
+            println!("  Invalid number — keeping current value ({current_str}).");
+            Ok(current)
+        }
+    }
 }
 
 fn champions_for_position_mut<'a>(config: &'a mut Config, position: &str) -> &'a mut Vec<String> {

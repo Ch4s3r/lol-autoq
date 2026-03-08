@@ -14,7 +14,7 @@ use tracing::{error, info, trace, warn};
 
 use champion_select::{build_champion_map, handle_ban_phase, handle_champion_select};
 use cli::{Cli, Command};
-use config::Config;
+use config::{format_lock_in, Config};
 use lcu::{LcuClient, LockfileData};
 
 /// How long to wait between polls when the client is not running.
@@ -118,8 +118,8 @@ async fn main() -> Result<()> {
             info!("  Bans:    {}", config.bans.join(" -> "));
             info!("");
             info!("Lock-in timers:");
-            info!("  Ban lock-in:  ≤ {}s remaining", config.lock_in_ban_secs);
-            info!("  Pick lock-in: ≤ {}s remaining", config.lock_in_pick_secs);
+            info!("  Ban lock-in:  {}", format_lock_in(config.lock_in_ban_secs));
+            info!("  Pick lock-in: {}", format_lock_in(config.lock_in_pick_secs));
             info!("");
             info!("Waiting for the League of Legends client to start...");
 

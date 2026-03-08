@@ -5,6 +5,18 @@ use std::path::PathBuf;
 
 const CONFIG_FILE: &str = "config.toml";
 
+/// Sentinel value for `lock_in_*_secs` meaning "lock in as soon as hovered".
+pub const INSTANT: u64 = u64::MAX;
+
+/// Human-readable representation of a lock-in threshold.
+pub fn format_lock_in(secs: u64) -> String {
+    if secs == INSTANT {
+        "Instant".to_string()
+    } else {
+        format!("≤ {secs}s remaining")
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     /// Override the lockfile path. If None, common Windows paths are scanned.

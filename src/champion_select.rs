@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Result;
 use tracing::{info, trace, warn};
 
-use crate::config::Config;
+use crate::config::{Config, INSTANT};
 use crate::lcu::{Action, ChampSelectSession, ChampionSummary, LcuClient};
 
 /// Returns:
@@ -123,17 +123,19 @@ pub async fn handle_ban_phase(
         *hovered_ban = Some(chosen_id);
     }
 
-    // Lock in when the timer drops to the threshold.
+    // Lock in when the timer drops to the threshold (INSTANT skips the check).
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
-    let threshold = config.lock_in_ban_secs as f64;
-    if remaining_secs > threshold {
-        trace!(
-            remaining = format!("{remaining_secs:.1}s"),
-            threshold = format!("{threshold:.0}s"),
-            champion = %chosen_name,
-            "waiting to lock ban"
-        );
-        return Ok(false);
+    if config.lock_in_ban_secs != INSTANT {
+        let threshold = config.lock_in_ban_secs as f64;
+        if remaining_secs > threshold {
+            trace!(
+                remaining = format!("{remaining_secs:.1}s"),
+                threshold = format!("{threshold:.0}s"),
+                champion = %chosen_name,
+                "waiting to lock ban"
+            );
+            return Ok(false);
+        }
     }
 
     info!(
@@ -271,17 +273,19 @@ pub async fn handle_champion_select(
         *hovered_pick = Some(chosen_id);
     }
 
-    // Lock in when the timer drops to the threshold.
+    // Lock in when the timer drops to the threshold (INSTANT skips the check).
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
-    let threshold = config.lock_in_pick_secs as f64;
-    if remaining_secs > threshold {
-        trace!(
-            remaining = format!("{remaining_secs:.1}s"),
-            threshold = format!("{threshold:.0}s"),
-            champion = %chosen_name,
-            "waiting to lock pick"
-        );
-        return Ok(false);
+    if config.lock_in_pick_secs != INSTANT {
+        let threshold = config.lock_in_pick_secs as f64;
+        if remaining_secs > threshold {
+            trace!(
+                remaining = format!("{remaining_secs:.1}s"),
+                threshold = format!("{threshold:.0}s"),
+                champion = %chosen_name,
+                "waiting to lock pick"
+            );
+            return Ok(false);
+        }
     }
 
     // Re-check availability right before locking (champion could have been
