@@ -241,23 +241,8 @@ async fn poll_loop(
                         }
                     };
 
-                    if !ban_completed {
-                        match handle_ban_phase(
-                            client,
-                            &session,
-                            config,
-                            champion_map,
-                            display_names,
-                            &mut hovered_ban,
-                        )
-                        .await
-                        {
-                            Ok(true) => ban_completed = true,
-                            Ok(false) => {}
-                            Err(e) => error!(error = %e, "Ban phase error"),
-                        }
-                    }
-
+                    // Hover the pick champion first (intent phase shows your
+                    // team what you want to play), then handle bans, then lock pick.
                     if !champ_locked {
                         match handle_champion_select(
                             client,
@@ -275,6 +260,23 @@ async fn poll_loop(
                                 }
                             }
                             Err(e) => error!(error = %e, "Champion select error"),
+                        }
+                    }
+
+                    if !ban_completed {
+                        match handle_ban_phase(
+                            client,
+                            &session,
+                            config,
+                            champion_map,
+                            display_names,
+                            &mut hovered_ban,
+                        )
+                        .await
+                        {
+                            Ok(true) => ban_completed = true,
+                            Ok(false) => {}
+                            Err(e) => error!(error = %e, "Ban phase error"),
                         }
                     }
                 }
