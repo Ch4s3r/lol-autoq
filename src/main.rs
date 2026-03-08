@@ -19,26 +19,19 @@ use lcu::{LcuClient, LockfileData};
 
 /// How long to wait between polls when the client is not running.
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
-/// Champion select: react as fast as possible for ban/pick hovers.
-const POLL_CHAMPSELECT: Duration = Duration::from_millis(100);
-/// Ready check and other active phases: fast but not extreme.
-const POLL_FAST: Duration = Duration::from_millis(500);
-/// Idle phases: lobby / post-game, nothing time-sensitive.
-const POLL_IDLE: Duration = Duration::from_secs(3);
-/// In-game: nothing to do until the game ends, check infrequently.
+/// Active phases (lobby → champ select): poll every 100 ms.
+const POLL_ACTIVE: Duration = Duration::from_millis(100);
+/// Post-game screens: nothing to do, check occasionally.
+const POLL_POSTGAME: Duration = Duration::from_secs(2);
+/// In-game: nothing to do until the game ends.
 const POLL_INGAME: Duration = Duration::from_secs(30);
 
-/// Return the appropriate poll interval for a given gameflow phase.
+/// Return the poll interval for a given gameflow phase.
 fn poll_interval(phase: &str) -> Duration {
     match phase {
-        // Ban/pick hovers need sub-second reaction.
-        "ChampSelect" => POLL_CHAMPSELECT,
-        // Ready check and game-start: fast but not maximum.
-        "Matchmaking" | "ReadyCheck" | "GameStart" => POLL_FAST,
-        // Active game: nothing actionable, wake up rarely.
         "InProgress" => POLL_INGAME,
-        // Lobby, post-game, unknown: moderate cadence.
-        _ => POLL_IDLE,
+        "WaitingForStats" | "PreEndOfGame" | "EndOfGame" => POLL_POSTGAME,
+        _ => POLL_ACTIVE,
     }
 }
 
@@ -258,7 +251,7 @@ async fn poll_loop(
                         Ok(s) => s,
                         Err(e) => {
                             warn!(error = %e, "Could not read champ select session");
-                            sleep(POLL_CHAMPSELECT).await;
+                            sleep(POLL_ACTIVE).await;
                             continue;
                         }
                     };
