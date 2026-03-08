@@ -121,6 +121,8 @@ pub async fn handle_ban_phase(
         info!(champion = %chosen_name, "Hovering ban...");
         client.hover_champion(action.id, chosen_id).await?;
         *hovered_ban = Some(chosen_id);
+        // Let the LCU process the hover before we try to lock.
+        return Ok(false);
     }
 
     // Lock in when the timer drops to the threshold (INSTANT skips the check).
