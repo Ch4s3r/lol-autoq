@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use tracing::{info, trace, warn};
 
 use crate::config::Config;
@@ -46,9 +46,39 @@ pub fn find_active_ban_action(session: &ChampSelectSession) -> Option<&Action> {
     })
 }
 
+/// Find the best available ban target from the config preference list.
+fn best_ban_target(
+    config: &Config,
+    champion_map: &HashMap<String, i64>,
+    display_names: &HashMap<i64, String>,
+    already_banned: &HashSet<i64>,
+) -> Option<(i64, String)> {
+    config.bans.iter().find_map(|pref_name| {
+        let key = pref_name.to_ascii_lowercase();
+        match champion_map.get(&key) {
+            None => {
+                trace!(champion = %pref_name, "ban target not found in game data — check spelling");
+                None
+            }
+            Some(&id) if already_banned.contains(&id) => {
+                trace!(champion = %pref_name, "already banned — skipping");
+                None
+            }
+            Some(&id) => {
+                let name = display_names
+                    .get(&id)
+                    .map(String::as_str)
+                    .unwrap_or(pref_name)
+                    .to_owned();
+                Some((id, name))
+            }
+        }
+    })
+}
+
 /// Ban phase handler.
 /// - Hovers the highest-priority available ban immediately.
-/// - Locks the ban in when the timer reaches <= BAN_AT_MS.
+/// - Locks the ban in when the timer reaches <= `lock_in_ban_secs`.
 ///
 /// Returns `true` when the ban was completed, `false` when still waiting.
 pub async fn handle_ban_phase(
@@ -57,6 +87,7 @@ pub async fn handle_ban_phase(
     config: &Config,
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
+    hovered_ban: &mut Option<i64>,
 ) -> Result<bool> {
     let action = match find_active_ban_action(session) {
         Some(a) => a,
@@ -77,38 +108,39 @@ pub async fn handle_ban_phase(
         .copied()
         .collect();
 
-    let (chosen_id, chosen_name) = config
-        .bans
-        .iter()
-        .find_map(|pref_name| {
-            let key = pref_name.to_ascii_lowercase();
-            match champion_map.get(&key) {
-                None => {
-                    trace!(champion = %pref_name, "ban target not found in game data — check spelling");
-                    None
-                }
-                Some(&id) if already_banned.contains(&id) => {
-                    trace!(champion = %pref_name, "already banned — skipping");
-                    None
-                }
-                Some(&id) => {
-                    let name = display_names
-                        .get(&id)
-                        .map(String::as_str)
-                        .unwrap_or(pref_name)
-                        .to_owned();
-                    Some((id, name))
-                }
-            }
-        })
-        .ok_or_else(|| anyhow!("All preferred bans are already banned — add more options"))?;
+    let (chosen_id, chosen_name) = match best_ban_target(config, champion_map, display_names, &already_banned) {
+        Some(pair) => pair,
+        None => {
+            warn!("All preferred bans are already banned — add more options");
+            return Ok(false);
+        }
+    };
 
-    // Immediately ban
+    // Hover immediately if we haven't hovered this champion yet.
+    if *hovered_ban != Some(chosen_id) {
+        info!(champion = %chosen_name, "Hovering ban...");
+        client.hover_champion(action.id, chosen_id).await?;
+        *hovered_ban = Some(chosen_id);
+    }
+
+    // Lock in when the timer drops to the threshold.
+    let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+    let threshold = config.lock_in_ban_secs as f64;
+    if remaining_secs > threshold {
+        trace!(
+            remaining = format!("{remaining_secs:.1}s"),
+            threshold = format!("{threshold:.0}s"),
+            champion = %chosen_name,
+            "waiting to lock ban"
+        );
+        return Ok(false);
+    }
+
     info!(
         champion = %chosen_name,
-        action_id = action.id,
+        remaining = format!("{remaining_secs:.1}s"),
         ban_order = %config.bans.join(" -> "),
-        "Banning immediately!"
+        "Locking in ban!"
     );
     client.lock_champion(action.id, chosen_id).await?;
     info!(champion = %chosen_name, "Ban complete!");
@@ -149,8 +181,42 @@ pub fn local_assigned_position(session: &ChampSelectSession) -> &str {
         .unwrap_or("")
 }
 
+/// Find the best available champion pick from the preference list.
+fn best_pick_target(
+    config: &Config,
+    raw_position: &str,
+    champion_map: &HashMap<String, i64>,
+    display_names: &HashMap<i64, String>,
+    unavailable: &HashSet<i64>,
+) -> Option<(i64, String)> {
+    let prefs = config.champions_for_position(raw_position);
+    prefs.iter().find_map(|pref_name| {
+        let key = pref_name.to_ascii_lowercase();
+        match champion_map.get(&key) {
+            None => {
+                trace!(champion = %pref_name, "not found in game data — check spelling in config.toml");
+                None
+            }
+            Some(&id) if unavailable.contains(&id) => {
+                trace!(champion = %pref_name, "banned or already picked — skipping");
+                None
+            }
+            Some(&id) => {
+                let name = display_names
+                    .get(&id)
+                    .map(String::as_str)
+                    .unwrap_or(pref_name)
+                    .to_owned();
+                Some((id, name))
+            }
+        }
+    })
+}
+
 /// Core champion-select handler.
-/// - Immediately locks in the highest-priority available champion.
+/// - Hovers the highest-priority available champion immediately.
+/// - Re-evaluates if the hovered champion gets banned and switches to the next.
+/// - Locks in when the timer reaches <= `lock_in_pick_secs`.
 ///
 /// Returns `true` when the champion was locked in, `false` when still waiting.
 pub async fn handle_champion_select(
@@ -159,6 +225,7 @@ pub async fn handle_champion_select(
     config: &Config,
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
+    hovered_pick: &mut Option<i64>,
 ) -> Result<bool> {
     let action = match find_active_pick_action(session) {
         Some(a) => a,
@@ -180,45 +247,57 @@ pub async fn handle_champion_select(
     let unavailable = unavailable_champion_ids(session);
     trace!(ids = ?unavailable, "unavailable champions");
 
-    let (chosen_id, chosen_name) = prefs
-        .iter()
-        .find_map(|pref_name| {
-            let key = pref_name.to_ascii_lowercase();
-            match champion_map.get(&key) {
-                None => {
-                    trace!(champion = %pref_name, "not found in game data — check spelling in config.toml");
-                    None
-                }
-                Some(&id) if unavailable.contains(&id) => {
-                    trace!(champion = %pref_name, "banned or already picked — skipping");
-                    None
-                }
-                Some(&id) => {
-                    let name = display_names
-                        .get(&id)
-                        .map(String::as_str)
-                        .unwrap_or(pref_name)
-                        .to_owned();
-                    Some((id, name))
-                }
-            }
-        })
-        .ok_or_else(|| {
-            anyhow!(
-                "All preferred champions are banned/picked for {} — add more options to config.toml",
-                position_label
-            )
-        })?;
+    let (chosen_id, chosen_name) = match best_pick_target(config, raw_position, champion_map, display_names, &unavailable) {
+        Some(pair) => pair,
+        None => {
+            warn!(
+                position = %position_label,
+                "All preferred champions are banned/picked — add more options to config.toml"
+            );
+            return Ok(false);
+        }
+    };
 
-    trace!(champion_id = chosen_id, champion = %chosen_name, "champion selected");
+    // Hover immediately. If the previously hovered champion was banned,
+    // this will switch to the next best available.
+    if *hovered_pick != Some(chosen_id) {
+        info!(
+            position = %position_label,
+            champion = %chosen_name,
+            pick_order = %prefs.join(" -> "),
+            "Hovering champion..."
+        );
+        client.hover_champion(action.id, chosen_id).await?;
+        *hovered_pick = Some(chosen_id);
+    }
 
-    // Immediately lock in
+    // Lock in when the timer drops to the threshold.
+    let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+    let threshold = config.lock_in_pick_secs as f64;
+    if remaining_secs > threshold {
+        trace!(
+            remaining = format!("{remaining_secs:.1}s"),
+            threshold = format!("{threshold:.0}s"),
+            champion = %chosen_name,
+            "waiting to lock pick"
+        );
+        return Ok(false);
+    }
+
+    // Re-check availability right before locking (champion could have been
+    // banned between the hover and now).
+    let unavailable = unavailable_champion_ids(session);
+    if unavailable.contains(&chosen_id) {
+        warn!(champion = %chosen_name, "champion was banned since hovering — switching");
+        *hovered_pick = None;
+        return Ok(false);
+    }
+
     info!(
         position = %position_label,
         champion = %chosen_name,
-        action_id = action.id,
-        pick_order = %prefs.join(" -> "),
-        "Locking in immediately!"
+        remaining = format!("{remaining_secs:.1}s"),
+        "Locking in champion!"
     );
     client.lock_champion(action.id, chosen_id).await?;
     info!(champion = %chosen_name, "Lock-in complete!");

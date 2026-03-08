@@ -12,7 +12,21 @@ pub struct Config {
     /// Champions to ban, in priority order (first = most preferred ban).
     #[serde(default)]
     pub bans: Vec<String>,
+    /// Lock in the ban when the timer has this many seconds or fewer remaining.
+    #[serde(default = "default_lock_in_ban_secs")]
+    pub lock_in_ban_secs: u64,
+    /// Lock in the champion pick when the timer has this many seconds or fewer remaining.
+    #[serde(default = "default_lock_in_pick_secs")]
+    pub lock_in_pick_secs: u64,
     pub preferences: LanePreferences,
+}
+
+fn default_lock_in_ban_secs() -> u64 {
+    5
+}
+
+fn default_lock_in_pick_secs() -> u64 {
+    10
 }
 
 /// Champion preferences per lane. Listed in priority order (first = most preferred).
@@ -33,6 +47,8 @@ impl Default for Config {
         Self {
             lockfile_path: None,
             bans: vec!["Zed".into(), "Yasuo".into(), "Yone".into()],
+            lock_in_ban_secs: default_lock_in_ban_secs(),
+            lock_in_pick_secs: default_lock_in_pick_secs(),
             preferences: LanePreferences {
                 top: vec!["Darius".into(), "Garen".into(), "Malphite".into()],
                 jungle: vec!["Vi".into(), "Warwick".into(), "Amumu".into()],

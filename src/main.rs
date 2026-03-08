@@ -117,6 +117,10 @@ async fn main() -> Result<()> {
             info!("  Fill:    {}", config.preferences.fill.join(" -> "));
             info!("  Bans:    {}", config.bans.join(" -> "));
             info!("");
+            info!("Lock-in timers:");
+            info!("  Ban lock-in:  ≤ {}s remaining", config.lock_in_ban_secs);
+            info!("  Pick lock-in: ≤ {}s remaining", config.lock_in_pick_secs);
+            info!("");
             info!("Waiting for the League of Legends client to start...");
 
             run_loop(&config).await?;
@@ -201,6 +205,8 @@ async fn poll_loop(
     let mut ready_check_accepted = false;
     let mut ban_completed = false;
     let mut champ_locked = false;
+    let mut hovered_ban: Option<i64> = None;
+    let mut hovered_pick: Option<i64> = None;
 
     loop {
         let phase = client.get_gameflow_phase().await?;
@@ -212,6 +218,8 @@ async fn poll_loop(
             ready_check_accepted = false;
             ban_completed = false;
             champ_locked = false;
+            hovered_ban = None;
+            hovered_pick = None;
         }
 
         match phase.as_str() {
@@ -262,6 +270,7 @@ async fn poll_loop(
                             config,
                             champion_map,
                             display_names,
+                            &mut hovered_ban,
                         )
                         .await
                         {
@@ -278,6 +287,7 @@ async fn poll_loop(
                             config,
                             champion_map,
                             display_names,
+                            &mut hovered_pick,
                         )
                         .await
                         {

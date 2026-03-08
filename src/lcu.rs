@@ -286,6 +286,7 @@ pub struct Action {
     pub is_in_progress: bool,
     pub completed: bool,
     #[serde(rename = "championId", default)]
+    #[allow(dead_code)]
     pub champion_id: i64,
 }
 
@@ -320,6 +321,7 @@ pub struct PhaseTimer {
     pub adjusted_time_left_ms: i64,
     /// Total milliseconds for the current phase.
     #[serde(rename = "totalTimeInPhase", default)]
+    #[allow(dead_code)]
     pub total_time_ms: i64,
 }
 

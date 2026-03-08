@@ -26,6 +26,11 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
             break;
         }
 
+        if selection.starts_with("Timers") {
+            edit_timers(config)?;
+            continue;
+        }
+
         // Strip the summary suffix to get the bare position name.
         let position = selection.split_whitespace().next().unwrap_or("").to_string();
         edit_position(config, &position, champion_names.as_deref())?;
@@ -66,6 +71,10 @@ fn position_menu_options(config: &Config) -> Vec<String> {
         })
         .collect();
 
+    options.push(format!(
+        "Timers   ban ≤ {}s / pick ≤ {}s",
+        config.lock_in_ban_secs, config.lock_in_pick_secs
+    ));
     options.push(SAVE_EXIT.to_string());
     options
 }
@@ -300,6 +309,55 @@ fn action_move(config: &mut Config, position: &str, delta: i32) -> Result<()> {
             println!("  '{chosen}' is already at that end of the list.");
         }
     }
+    Ok(())
+}
+
+/// Interactive editor for lock-in timer thresholds.
+fn edit_timers(config: &mut Config) -> Result<()> {
+    println!();
+    println!("  Lock-in Timers");
+    println!("  The bot hovers your champion immediately, then locks in when");
+    println!("  the remaining time drops to the configured threshold.");
+    println!();
+    println!("  Current:  ban ≤ {}s  /  pick ≤ {}s", config.lock_in_ban_secs, config.lock_in_pick_secs);
+    println!();
+
+    let ban_input = match Text::new(&format!(
+        "Lock in ban when timer ≤ ___ seconds (current: {}):",
+        config.lock_in_ban_secs
+    ))
+    .with_default(&config.lock_in_ban_secs.to_string())
+    .prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    if let Ok(secs) = ban_input.trim().parse::<u64>() {
+        config.lock_in_ban_secs = secs;
+        println!("  Ban lock-in set to ≤ {secs}s");
+    } else {
+        println!("  Invalid number — keeping current value.");
+    }
+
+    let pick_input = match Text::new(&format!(
+        "Lock in pick when timer ≤ ___ seconds (current: {}):",
+        config.lock_in_pick_secs
+    ))
+    .with_default(&config.lock_in_pick_secs.to_string())
+    .prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+    if let Ok(secs) = pick_input.trim().parse::<u64>() {
+        config.lock_in_pick_secs = secs;
+        println!("  Pick lock-in set to ≤ {secs}s");
+    } else {
+        println!("  Invalid number — keeping current value.");
+    }
+
     Ok(())
 }
 
