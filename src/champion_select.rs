@@ -149,13 +149,11 @@ pub async fn handle_ban_phase(
     Ok(true)
 }
 
-/// Return the single pick action that belongs to `local_player_cell_id`
-/// and is currently in-progress and not yet completed.
-pub fn find_active_pick_action(session: &ChampSelectSession) -> Option<&Action> {
+/// Return our pick action regardless of whether it is in-progress yet.
+pub fn find_pick_action(session: &ChampSelectSession) -> Option<&Action> {
     session.actions.iter().flatten().find(|a| {
         a.actor_cell_id == session.local_player_cell_id
             && a.action_type == "pick"
-            && a.is_in_progress
             && !a.completed
     })
 }
@@ -229,9 +227,10 @@ pub async fn handle_champion_select(
     display_names: &HashMap<i64, String>,
     hovered_pick: &mut Option<i64>,
 ) -> Result<bool> {
-    let action = match find_active_pick_action(session) {
+    // Use the any-state action for hovering; need in-progress for lock-in.
+    let action = match find_pick_action(session) {
         Some(a) => a,
-        None => return Ok(false), // nothing to do yet
+        None => return Ok(false),
     };
 
     let raw_position = local_assigned_position(session);
@@ -260,8 +259,7 @@ pub async fn handle_champion_select(
         }
     };
 
-    // Hover immediately. If the previously hovered champion was banned,
-    // this will switch to the next best available.
+    // Hover immediately, even before it's our turn.
     if *hovered_pick != Some(chosen_id) {
         info!(
             position = %position_label,
@@ -271,6 +269,11 @@ pub async fn handle_champion_select(
         );
         client.hover_champion(action.id, chosen_id).await?;
         *hovered_pick = Some(chosen_id);
+    }
+
+    // Only lock in when it's actually our turn.
+    if !action.is_in_progress {
+        return Ok(false);
     }
 
     // Lock in when the timer drops to the threshold (INSTANT skips the check).
