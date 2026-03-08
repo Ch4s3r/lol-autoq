@@ -217,23 +217,27 @@ impl LcuClient {
         .await
     }
 
-    /// Lock in a champion: PATCH to set the champion, then POST to /complete.
+    /// Lock in a champion: PATCH with `completed: true` to set and complete in one call,
+    /// then POST to /complete as a belt-and-suspenders fallback.
     pub async fn lock_champion(&self, action_id: i64, champion_id: i64) -> Result<()> {
         #[derive(Serialize)]
         struct Body {
             #[serde(rename = "championId")]
             champion_id: i64,
+            completed: bool,
         }
         self.patch_json(
             &format!("/lol-champ-select/v1/session/actions/{}", action_id),
-            &Body { champion_id },
+            &Body { champion_id, completed: true },
         )
         .await?;
-        self.post_no_body(&format!(
+        // Some LCU versions need the explicit /complete POST as well.
+        let _ = self.post_no_body(&format!(
             "/lol-champ-select/v1/session/actions/{}/complete",
             action_id
         ))
-        .await
+        .await;
+        Ok(())
     }
 
     // ------------------------------------------------------------------

@@ -48,4 +48,5 @@ Endpoints used:
 - Champion lookup is case-insensitive via `.to_ascii_lowercase()`, maps both `name` and `alias`
 - Config loaded once as immutable `&Config` for `start`; only `configure` mutates
 - Per-phase state (`ready_check_accepted`, `ban_completed`, `champ_locked`, hover state) resets on phase transitions
-- Champion data loading retries up to 10× with exponential backoff
+- **No retries** — do not add retry loops anywhere; the poll loop itself already re-drives actions each cycle
+- Champion data loading retries up to 10× with exponential backoff (sole exception — needed because the endpoint isn't available immediately on client start)
