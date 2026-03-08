@@ -158,7 +158,17 @@ pub fn find_pick_action(session: &ChampSelectSession) -> Option<&Action> {
     })
 }
 
-/// Collect all champion ids that are currently banned or picked
+/// Returns true when every ban action in the session has been completed,
+/// i.e. the ban phase is fully over and actual picks are happening.
+fn all_bans_completed(session: &ChampSelectSession) -> bool {
+    session
+        .actions
+        .iter()
+        .flatten()
+        .filter(|a| a.action_type == "ban")
+        .all(|a| a.completed)
+}
+
 /// into a HashSet for O(1) membership testing.
 fn unavailable_champion_ids(session: &ChampSelectSession) -> HashSet<i64> {
     session
@@ -225,7 +235,7 @@ pub async fn handle_champion_select(
     config: &Config,
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
-    hovered_pick: &mut Option<i64>,
+    hovered_pick: &mut Option<(i64, i64)>,
 ) -> Result<bool> {
     // Use the any-state action for hovering; need in-progress for lock-in.
     let action = match find_pick_action(session) {
@@ -260,7 +270,8 @@ pub async fn handle_champion_select(
     };
 
     // Hover immediately, even before it's our turn.
-    if *hovered_pick != Some(chosen_id) {
+    // Re-hover if the action ID or champion changed (e.g. intent → pick phase transition).
+    if *hovered_pick != Some((action.id, chosen_id)) {
         info!(
             position = %position_label,
             champion = %chosen_name,
@@ -268,11 +279,12 @@ pub async fn handle_champion_select(
             "Hovering champion..."
         );
         client.hover_champion(action.id, chosen_id).await?;
-        *hovered_pick = Some(chosen_id);
+        *hovered_pick = Some((action.id, chosen_id));
     }
 
-    // Only lock in when it's actually our turn.
-    if !action.is_in_progress {
+    // Only lock in when it's actually our turn in the pick phase
+    // (not during the simultaneous intent phase at the start).
+    if !action.is_in_progress || !all_bans_completed(session) {
         return Ok(false);
     }
 

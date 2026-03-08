@@ -199,7 +199,8 @@ async fn poll_loop(
     let mut ban_completed = false;
     let mut champ_locked = false;
     let mut hovered_ban: Option<i64> = None;
-    let mut hovered_pick: Option<i64> = None;
+    // (action_id, champion_id) — if either changes, hover is re-sent.
+    let mut hovered_pick: Option<(i64, i64)> = None;
 
     loop {
         let phase = client.get_gameflow_phase().await?;
