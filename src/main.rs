@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::Parser as _;
 use tokio::time::sleep;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, warn};
 
 use champion_select::{build_champion_map, handle_ban_phase, handle_champion_select};
 use cli::{Cli, Command};
@@ -218,29 +218,13 @@ async fn poll_loop(
         match phase.as_str() {
             "ReadyCheck" => {
                 if !ready_check_accepted {
-                    match client.get_ready_check().await {
-                        Ok(rc) if rc.max_secs > 0.0 && rc.elapsed_secs >= rc.max_secs / 2.0 => {
-                            info!(
-                                elapsed = rc.elapsed_secs,
-                                max = rc.max_secs,
-                                "Accepting queue at halfway mark..."
-                            );
-                            match client.accept_ready_check().await {
-                                Ok(()) => {
-                                    info!("Queue accepted!");
-                                    ready_check_accepted = true;
-                                }
-                                Err(e) => warn!(error = %e, "Could not accept queue"),
-                            }
+                    info!("Ready check detected — accepting...");
+                    match client.accept_ready_check().await {
+                        Ok(()) => {
+                            info!("Queue accepted!");
+                            ready_check_accepted = true;
                         }
-                        Ok(rc) => {
-                            trace!(
-                                elapsed = rc.elapsed_secs,
-                                max = rc.max_secs,
-                                "waiting for halfway mark to accept"
-                            );
-                        }
-                        Err(e) => warn!(error = %e, "Could not read ready-check status"),
+                        Err(e) => warn!(error = %e, "Could not accept queue"),
                     }
                 }
             }

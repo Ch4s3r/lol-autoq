@@ -190,13 +190,8 @@ impl LcuClient {
     // ------------------------------------------------------------------
 
     pub async fn accept_ready_check(&self) -> Result<()> {
-        self.post_no_body("/lol-matchmaking/v1/ready-check/accept")
+        self.post_no_body("/lol-lobby-team-builder/v1/ready-check/accept")
             .await
-    }
-
-    /// Fetch the current ready-check state including elapsed and max timer.
-    pub async fn get_ready_check(&self) -> Result<ReadyCheckStatus> {
-        self.get("/lol-matchmaking/v1/ready-check").await
     }
 
     // ------------------------------------------------------------------
@@ -323,15 +318,4 @@ pub struct PhaseTimer {
     #[serde(rename = "totalTimeInPhase", default)]
     #[allow(dead_code)]
     pub total_time_ms: i64,
-}
-
-/// Ready-check state returned by the matchmaking endpoint.
-#[derive(Debug, Deserialize, Clone)]
-pub struct ReadyCheckStatus {
-    /// Seconds elapsed since the ready check appeared.
-    #[serde(rename = "timer", default)]
-    pub elapsed_secs: f64,
-    /// Total seconds the ready check lasts.
-    #[serde(rename = "maxTimer", default)]
-    pub max_secs: f64,
 }
