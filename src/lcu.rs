@@ -190,7 +190,7 @@ impl LcuClient {
     // ------------------------------------------------------------------
 
     pub async fn accept_ready_check(&self) -> Result<()> {
-        self.post_no_body("/lol-lobby-team-builder/v1/ready-check/accept")
+        self.post_no_body("/lol-matchmaking/v1/ready-check/accept")
             .await
     }
 

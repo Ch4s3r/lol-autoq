@@ -33,7 +33,7 @@ Auth: lockfile at `C:\Riot Games\League of Legends\lockfile` (format `Name:PID:P
 
 Endpoints used:
 - `GET /lol-gameflow/v1/gameflow-phase` — current game state string
-- `POST /lol-lobby-team-builder/v1/ready-check/accept` — accept queue pop
+- `POST /lol-matchmaking/v1/ready-check/accept` — accept queue pop
 - `GET /lol-champ-select/v1/session` — champ select session (actions, teams, bans, timer)
 - `PATCH /lol-champ-select/v1/session/actions/{id}` — hover or set champion
 - `POST /lol-champ-select/v1/session/actions/{id}/complete` — lock in
