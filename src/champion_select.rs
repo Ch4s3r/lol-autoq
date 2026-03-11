@@ -94,6 +94,14 @@ pub async fn handle_ban_phase(
         None => return Ok(false),
     };
 
+    // Only act during the actual ban phase. During "PLANNING" the ban action
+    // is already marked is_in_progress but it's too early to hover or lock.
+    let phase = session.timer.phase.as_str();
+    if phase == "PLANNING" || phase.is_empty() {
+        trace!(phase, "skipping ban — not in ban phase yet");
+        return Ok(false);
+    }
+
     if config.bans.is_empty() {
         warn!("no ban preferences configured — add some via `lol-autoq configure`");
         return Ok(false);

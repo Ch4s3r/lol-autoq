@@ -326,4 +326,7 @@ pub struct PhaseTimer {
     #[serde(rename = "totalTimeInPhase", default)]
     #[allow(dead_code)]
     pub total_time_ms: i64,
+    /// Current sub-phase name, e.g. "PLANNING", "BAN_PICK", "FINALIZATION".
+    #[serde(rename = "phase", default)]
+    pub phase: String,
 }
