@@ -11,7 +11,7 @@ pub fn ActivityLog(entries: Vec<ActivityEntry>) -> Element {
                 if entries.is_empty() {
                     p { class: "activity-empty", "No activity yet" }
                 }
-                for (i, entry) in entries.iter().enumerate() {
+                for (i, entry) in entries.iter().rev().enumerate() {
                     div {
                         key: "{i}",
                         class: "activity-entry",

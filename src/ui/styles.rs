@@ -211,6 +211,10 @@ html, body, #main {
   gap: 1px;
   max-height: 160px;
   overflow-y: auto;
+  overflow-anchor: auto;
+}
+.activity-list > :last-child {
+  overflow-anchor: auto;
 }
 .activity-entry {
   display: flex;
