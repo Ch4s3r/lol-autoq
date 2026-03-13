@@ -58,6 +58,7 @@
             # dev tools
             pkgs.cargo-watch
             pkgs.cargo-edit
+            pkgs.cargo-nextest
 
             # UI toolchain
             pkgs.dioxus-cli      # `dx` — build/serve Dioxus desktop apps
