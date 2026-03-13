@@ -18,7 +18,7 @@ pub(crate) fn effective_threshold(configured_secs: u64, jitter_secs: u64) -> f64
 pub fn build_champion_map(
     summaries: &[ChampionSummary],
 ) -> (HashMap<String, i64>, HashMap<i64, String>) {
-    let valid: Vec<_> = summaries.iter().filter(|c| c.id > 0).collect();
+    let valid: Vec<_> = summaries.iter().filter(|c| c.is_playable()).collect();
     let mut lookup = HashMap::with_capacity(valid.len() * 2);
     let mut display = HashMap::with_capacity(valid.len());
     for c in valid {

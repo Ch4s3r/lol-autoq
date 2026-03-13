@@ -314,6 +314,23 @@ pub struct ChampionSummary {
     pub name: String,
     #[serde(default)]
     pub alias: String,
+    /// Path to the square portrait served by the LCU.
+    /// Non-playable champions (bots, special variants) use the
+    /// placeholder path ending in `/-1.png`; we filter those out.
+    #[serde(rename = "squarePortraitPath", default)]
+    pub square_portrait_path: String,
+}
+
+impl ChampionSummary {
+    /// Returns `true` for champions that are selectable in a real game.
+    /// Filters out bot/doombot variants whose portrait path is the
+    /// default placeholder (`-1.png`) or is missing entirely.
+    pub fn is_playable(&self) -> bool {
+        self.id > 0
+            && !self.name.is_empty()
+            && !self.square_portrait_path.is_empty()
+            && !self.square_portrait_path.ends_with("/-1.png")
+    }
 }
 
 /// Timer info embedded in a champ-select session.

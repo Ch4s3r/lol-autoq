@@ -19,7 +19,7 @@ pub fn ChampionPickerModal(
 
     let filtered: Vec<_> = summaries
         .iter()
-        .filter(|c| c.id > 0 && !c.name.is_empty())
+        .filter(|c| c.is_playable())
         .filter(|c| q.is_empty() || c.name.to_lowercase().contains(&q) || c.alias.to_lowercase().contains(&q))
         .map(|c| {
             let is_selected = current.contains(&c.name);
