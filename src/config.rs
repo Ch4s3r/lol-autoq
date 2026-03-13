@@ -9,6 +9,7 @@ const CONFIG_FILE: &str = "config.toml";
 pub const INSTANT: u64 = u64::MAX;
 
 /// Human-readable representation of a timer threshold or delay.
+#[allow(dead_code)]
 pub fn format_lock_in(secs: u64) -> String {
     if secs == INSTANT {
         "Instant".to_string()

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::app_state::{ActivityEntry, ActivityKind};
+use crate::app_state::ActivityEntry;
 
 #[component]
 pub fn ActivityLog(entries: Vec<ActivityEntry>) -> Element {

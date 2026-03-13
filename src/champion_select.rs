@@ -246,6 +246,7 @@ fn best_pick_target(
 /// - Locks in when the timer reaches <= `lock_in_pick_secs`.
 ///
 /// Returns `true` when the champion was locked in, `false` when still waiting.
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_champion_select(
     client: &LcuClient,
     session: &ChampSelectSession,

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::app_state::{AppState, ConnectionState};
+use crate::app_state::AppState;
 use super::components::{
     activity_log::ActivityLog,
     phase_card::PhaseCard,

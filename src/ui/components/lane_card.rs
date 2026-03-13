@@ -31,7 +31,7 @@ pub fn LaneCard(
                                     title: "Move up",
                                     onclick: {
                                         let mut champs = champions.clone();
-                                        let on_update = on_update.clone();
+                                        let on_update = on_update;
                                         move |_| {
                                             champs.swap(i - 1, i);
                                             on_update.call(champs.clone());
@@ -47,7 +47,7 @@ pub fn LaneCard(
                                     title: "Move down",
                                     onclick: {
                                         let mut champs = champions.clone();
-                                        let on_update = on_update.clone();
+                                        let on_update = on_update;
                                         move |_| {
                                             champs.swap(i, i + 1);
                                             on_update.call(champs.clone());
@@ -62,7 +62,7 @@ pub fn LaneCard(
                                 title: "Remove",
                                 onclick: {
                                     let mut champs = champions.clone();
-                                    let on_update = on_update.clone();
+                                    let on_update = on_update;
                                     move |_| {
                                         champs.remove(i);
                                         on_update.call(champs.clone());
@@ -87,7 +87,7 @@ pub fn LaneCard(
                     current: champions.clone(),
                     on_toggle: {
                         let mut champs = champions.clone();
-                        let on_update = on_update.clone();
+                        let on_update = on_update;
                         move |name: String| {
                             if let Some(pos) = champs.iter().position(|n| n == &name) {
                                 champs.remove(pos);

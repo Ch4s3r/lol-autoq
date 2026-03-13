@@ -11,7 +11,7 @@ pub fn ChampionPickerModal(
     on_close: EventHandler<()>,
 ) -> Element {
     let state = use_context::<AppState>();
-    let mut query = use_signal(|| String::new());
+    let mut query = use_signal(String::new);
 
     let summaries = state.champion_summaries.read();
     let version = state.ddragon_version.read().clone();
@@ -69,7 +69,7 @@ pub fn ChampionPickerModal(
                                 alias: champ.alias.clone(),
                                 ddragon_version: version.clone(),
                                 selected: current.contains(&champ.name),
-                                on_click: on_toggle.clone(),
+                                on_click: on_toggle,
                             }
                         }
                     }

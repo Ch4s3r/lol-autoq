@@ -139,7 +139,7 @@ async fn bg_poll_loop(mut state: AppState) {
         );
 
         // 5. Inner poll loop
-        if let Err(_) = inner_poll_loop(&client, state, &champion_map, &display_names).await {
+        if inner_poll_loop(&client, state, &champion_map, &display_names).await.is_err() {
             state.push_activity("Lost connection to LCU", ActivityKind::Warning);
             state.connection.set(ConnectionState::Disconnected);
             state.phase.set(GamePhase::None);
@@ -204,12 +204,11 @@ async fn inner_poll_loop(
                         cfg.accept_queue_delay_secs.saturating_add(queue_jitter)
                     };
                     let seen_at = ready_check_seen_at.get_or_insert_with(Instant::now);
-                    if seen_at.elapsed() >= Duration::from_secs(effective_delay) {
-                        if client.accept_ready_check().await.is_ok() {
+                    if seen_at.elapsed() >= Duration::from_secs(effective_delay)
+                        && client.accept_ready_check().await.is_ok() {
                             state.push_activity("Queue accepted!", ActivityKind::Success);
                             ready_check_accepted = true;
                         }
-                    }
                 }
             }
 
@@ -226,7 +225,7 @@ async fn inner_poll_loop(
                     // Pick handling
                     if !champ_locked {
                         let prev_hover = hovered_pick;
-                        match handle_champion_select(
+                        if let Ok(locked) = handle_champion_select(
                             client,
                             &session,
                             &cfg,
@@ -236,25 +235,20 @@ async fn inner_poll_loop(
                             hover_jitter,
                             pick_jitter,
                         )
-                        .await
-                        {
-                            Ok(locked) => {
-                                if hovered_pick != prev_hover {
-                                    if let Some((_, id)) = hovered_pick {
-                                        let name = display_names.get(&id).cloned().unwrap_or_default();
-                                        state.hovered_champion.set(Some(name.clone()));
-                                        state.push_activity(format!("Hovering pick: {name}"), ActivityKind::Info);
-                                    }
+                        .await {
+                            if hovered_pick != prev_hover
+                                && let Some((_, id)) = hovered_pick {
+                                    let name = display_names.get(&id).cloned().unwrap_or_default();
+                                    state.hovered_champion.set(Some(name.clone()));
+                                    state.push_activity(format!("Hovering pick: {name}"), ActivityKind::Info);
                                 }
-                                if locked {
-                                    champ_locked = true;
-                                    if let Some((_, id)) = hovered_pick {
-                                        let name = display_names.get(&id).cloned().unwrap_or_default();
-                                        state.push_activity(format!("Locked in: {name}"), ActivityKind::Success);
-                                    }
+                            if locked {
+                                champ_locked = true;
+                                if let Some((_, id)) = hovered_pick {
+                                    let name = display_names.get(&id).cloned().unwrap_or_default();
+                                    state.push_activity(format!("Locked in: {name}"), ActivityKind::Success);
                                 }
                             }
-                            Err(_) => {}
                         }
                     }
 
@@ -280,12 +274,11 @@ async fn inner_poll_loop(
                                 ban_completed = true;
                             }
                             Ok(false) => {
-                                if hovered_ban != prev_ban {
-                                    if let Some(id) = hovered_ban {
+                                if hovered_ban != prev_ban
+                                    && let Some(id) = hovered_ban {
                                         let name = display_names.get(&id).cloned().unwrap_or_default();
                                         state.push_activity(format!("Hovering ban: {name}"), ActivityKind::Info);
                                     }
-                                }
                             }
                             Err(_) => {}
                         }

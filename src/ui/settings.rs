@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 
 use crate::app_state::AppState;
-use crate::config::INSTANT;
 use super::components::{
     lane_card::LaneCard,
     timer_slider::TimerSlider,
@@ -17,7 +16,7 @@ enum SettingsTab {
 
 #[component]
 pub fn Settings() -> Element {
-    let mut state = use_context::<AppState>();
+    let state = use_context::<AppState>();
     let mut active_tab = use_signal(|| SettingsTab::Picks);
     let mut show_toast = use_signal(|| false);
 
@@ -67,11 +66,13 @@ pub fn Settings() -> Element {
 
 // ── Picks tab ─────────────────────────────────────────────────────────────
 
+type LaneGetter = fn(&crate::config::LanePreferences) -> &Vec<String>;
+
 #[component]
 fn PicksTab(on_save: EventHandler<()>) -> Element {
     let mut state = use_context::<AppState>();
 
-    let lanes: Vec<(&'static str, fn(&crate::config::LanePreferences) -> &Vec<String>)> = vec![
+    let lanes: Vec<(&'static str, LaneGetter)> = vec![
         ("Top",     |p| &p.top),
         ("Jungle",  |p| &p.jungle),
         ("Mid",     |p| &p.mid),
@@ -86,7 +87,7 @@ fn PicksTab(on_save: EventHandler<()>) -> Element {
                 {
                     let champs = getter(&state.config.read().preferences).clone();
                     let lane_str = lane_name.to_string();
-                    let on_save = on_save.clone();
+                    let on_save = on_save;
                     rsx! {
                         LaneCard {
                             key: "{lane_str}",
@@ -142,7 +143,7 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                                         class: "icon-btn",
                                         title: "Move up",
                                         onclick: {
-                                            let on_save = on_save.clone();
+                                            let on_save = on_save;
                                             move |_| {
                                                 let mut cfg = state.config.write();
                                                 cfg.bans.swap(i - 1, i);
@@ -158,7 +159,7 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                                         class: "icon-btn",
                                         title: "Move down",
                                         onclick: {
-                                            let on_save = on_save.clone();
+                                            let on_save = on_save;
                                             move |_| {
                                                 let mut cfg = state.config.write();
                                                 cfg.bans.swap(i, i + 1);
@@ -173,7 +174,7 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                                     class: "icon-btn danger",
                                     title: "Remove",
                                     onclick: {
-                                        let on_save = on_save.clone();
+                                        let on_save = on_save;
                                         move |_| {
                                             state.config.write().bans.remove(i);
                                             on_save.call(());
@@ -198,7 +199,7 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                     title: "Add Ban".to_string(),
                     current: bans.clone(),
                     on_toggle: {
-                        let on_save = on_save.clone();
+                        let on_save = on_save;
                         move |name: String| {
                             let mut cfg = state.config.write();
                             if let Some(pos) = cfg.bans.iter().position(|n| n == &name) {
@@ -240,7 +241,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                 value: lock_ban,
                 max_secs: MAX_SECS,
                 on_change: {
-                    let on_save = on_save.clone();
+                    let on_save = on_save;
                     move |v| {
                         state.config.write().lock_in_ban_secs = v;
                         on_save.call(());
@@ -253,7 +254,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                 value: lock_pick,
                 max_secs: MAX_SECS,
                 on_change: {
-                    let on_save = on_save.clone();
+                    let on_save = on_save;
                     move |v| {
                         state.config.write().lock_in_pick_secs = v;
                         on_save.call(());
@@ -266,7 +267,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                 value: hover,
                 max_secs: MAX_SECS,
                 on_change: {
-                    let on_save = on_save.clone();
+                    let on_save = on_save;
                     move |v| {
                         state.config.write().hover_pick_secs = v;
                         on_save.call(());
@@ -279,7 +280,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                 value: queue,
                 max_secs: MAX_SECS,
                 on_change: {
-                    let on_save = on_save.clone();
+                    let on_save = on_save;
                     move |v| {
                         state.config.write().accept_queue_delay_secs = v;
                         on_save.call(());
@@ -298,7 +299,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                     max: "15",
                     value: "{jitter}",
                     oninput: {
-                        let on_save = on_save.clone();
+                        let on_save = on_save;
                         move |e: Event<FormData>| {
                             if let Ok(v) = e.value().parse::<u64>() {
                                 state.config.write().timer_jitter_secs = v;
