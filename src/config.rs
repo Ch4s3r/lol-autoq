@@ -138,3 +138,85 @@ impl Config {
 fn config_path() -> PathBuf {
     PathBuf::from(CONFIG_FILE)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── format_lock_in ────────────────────────────────────────────────────────
+
+    #[test]
+    fn format_lock_in_instant_shows_label() {
+        assert_eq!(format_lock_in(INSTANT), "Instant");
+    }
+
+    #[test]
+    fn format_lock_in_numeric_shows_seconds() {
+        assert_eq!(format_lock_in(5),  "≤ 5s");
+        assert_eq!(format_lock_in(0),  "≤ 0s");
+        assert_eq!(format_lock_in(30), "≤ 30s");
+    }
+
+    // ── champions_for_position ────────────────────────────────────────────────
+
+    #[test]
+    fn champions_for_position_routes_all_lanes() {
+        let cfg = Config::default();
+        assert!(!cfg.champions_for_position("top").is_empty());
+        assert!(!cfg.champions_for_position("jungle").is_empty());
+        assert!(!cfg.champions_for_position("middle").is_empty());
+        assert!(!cfg.champions_for_position("mid").is_empty());
+        assert!(!cfg.champions_for_position("bottom").is_empty());
+        assert!(!cfg.champions_for_position("bot").is_empty());
+        assert!(!cfg.champions_for_position("adc").is_empty());
+        assert!(!cfg.champions_for_position("utility").is_empty());
+        assert!(!cfg.champions_for_position("support").is_empty());
+    }
+
+    #[test]
+    fn champions_for_position_unknown_falls_back_to_fill() {
+        let cfg = Config::default();
+        assert_eq!(
+            cfg.champions_for_position("unknown"),
+            cfg.preferences.fill.as_slice()
+        );
+    }
+
+    #[test]
+    fn champions_for_position_is_case_insensitive() {
+        let cfg = Config::default();
+        assert_eq!(
+            cfg.champions_for_position("TOP"),
+            cfg.champions_for_position("top")
+        );
+        assert_eq!(
+            cfg.champions_for_position("JUNGLE"),
+            cfg.champions_for_position("jungle")
+        );
+    }
+
+    #[test]
+    fn champions_for_position_mid_and_middle_are_same() {
+        let cfg = Config::default();
+        assert_eq!(
+            cfg.champions_for_position("mid"),
+            cfg.champions_for_position("middle")
+        );
+    }
+
+    #[test]
+    fn champions_for_position_bot_adc_bottom_are_same() {
+        let cfg = Config::default();
+        assert_eq!(cfg.champions_for_position("bot"),    cfg.champions_for_position("bottom"));
+        assert_eq!(cfg.champions_for_position("adc"),    cfg.champions_for_position("bottom"));
+    }
+
+    #[test]
+    fn champions_for_position_utility_and_support_are_same() {
+        let cfg = Config::default();
+        assert_eq!(
+            cfg.champions_for_position("utility"),
+            cfg.champions_for_position("support")
+        );
+    }
+}

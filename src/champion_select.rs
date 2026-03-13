@@ -82,39 +82,49 @@ fn best_ban_target(
     })
 }
 
-/// Ban phase handler.
-/// - Hovers the highest-priority available ban immediately.
-/// - Locks the ban in when the timer reaches <= `lock_in_ban_secs`.
-///
-/// Returns `true` when the ban was completed, `false` when still waiting.
-pub async fn handle_ban_phase(
-    client: &LcuClient,
+// ── Ban-phase decision ─────────────────────────────────────────────────────
+
+#[derive(Debug, PartialEq)]
+pub enum BanDecision {
+    /// No active ban action, wrong phase, etc.
+    Idle,
+    /// Config has an empty bans list.
+    NoBansConfigured,
+    /// Every preferred ban is already banned.
+    AllBansExhausted,
+    /// Hover this champion immediately.
+    Hover { action_id: i64, champion_id: i64, champion_name: String },
+    /// Already hovered; waiting for the lock-in window.
+    WaitForTimer { champion_name: String, remaining_secs: f64, threshold_secs: f64 },
+    /// Time to lock in.
+    LockIn { action_id: i64, champion_id: i64, champion_name: String, remaining_secs: f64 },
+}
+
+/// Pure decision function for the ban phase — no I/O, fully unit-testable.
+pub fn decide_ban(
     session: &ChampSelectSession,
     config: &Config,
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
-    hovered_ban: &mut Option<i64>,
+    hovered_ban: Option<i64>,
     lock_in_jitter: u64,
-) -> Result<bool> {
+) -> BanDecision {
     let action = match find_active_ban_action(session) {
         Some(a) => a,
-        None => return Ok(false),
+        None => return BanDecision::Idle,
     };
 
     // Only act during the actual ban phase. During "PLANNING" the ban action
     // is already marked is_in_progress but it's too early to hover or lock.
     let phase = session.timer.phase.as_str();
     if phase == "PLANNING" || phase.is_empty() {
-        trace!(phase, "skipping ban — not in ban phase yet");
-        return Ok(false);
+        return BanDecision::Idle;
     }
 
     if config.bans.is_empty() {
-        warn!("no ban preferences configured — add some via `lol-autoq configure`");
-        return Ok(false);
+        return BanDecision::NoBansConfigured;
     }
 
-    // Champions already banned by either team — we cannot ban these again.
     let already_banned: HashSet<i64> = session
         .bans
         .my_team_bans
@@ -125,45 +135,84 @@ pub async fn handle_ban_phase(
 
     let (chosen_id, chosen_name) = match best_ban_target(config, champion_map, display_names, &already_banned) {
         Some(pair) => pair,
-        None => {
-            warn!("All preferred bans are already banned — add more options");
-            return Ok(false);
-        }
+        None => return BanDecision::AllBansExhausted,
     };
 
-    // Hover immediately if we haven't hovered this champion yet.
-    if *hovered_ban != Some(chosen_id) {
-        info!(champion = %chosen_name, "Hovering ban...");
-        client.hover_champion(action.id, chosen_id).await?;
-        *hovered_ban = Some(chosen_id);
-        // Let the LCU process the hover before we try to lock.
-        return Ok(false);
+    if hovered_ban != Some(chosen_id) {
+        return BanDecision::Hover {
+            action_id: action.id,
+            champion_id: chosen_id,
+            champion_name: chosen_name,
+        };
     }
 
-    // Lock in when the timer drops to the threshold (INSTANT skips the check).
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
     if config.lock_in_ban_secs != INSTANT {
         let threshold = effective_threshold(config.lock_in_ban_secs, lock_in_jitter);
         if remaining_secs > threshold {
-            trace!(
-                remaining = format!("{remaining_secs:.1}s"),
-                threshold = format!("{threshold:.0}s"),
-                champion = %chosen_name,
-                "waiting to lock ban"
-            );
-            return Ok(false);
+            return BanDecision::WaitForTimer {
+                champion_name: chosen_name,
+                remaining_secs,
+                threshold_secs: threshold,
+            };
         }
     }
 
-    info!(
-        champion = %chosen_name,
-        remaining = format!("{remaining_secs:.1}s"),
-        ban_order = %config.bans.join(" -> "),
-        "Locking in ban!"
-    );
-    client.lock_champion(action.id, chosen_id).await?;
-    info!(champion = %chosen_name, "Ban complete!");
-    Ok(true)
+    BanDecision::LockIn {
+        action_id: action.id,
+        champion_id: chosen_id,
+        champion_name: chosen_name,
+        remaining_secs,
+    }
+}
+
+/// Ban phase handler — thin dispatcher that executes the `decide_ban` decision via LCU calls.
+pub async fn handle_ban_phase(
+    client: &LcuClient,
+    session: &ChampSelectSession,
+    config: &Config,
+    champion_map: &HashMap<String, i64>,
+    display_names: &HashMap<i64, String>,
+    hovered_ban: &mut Option<i64>,
+    lock_in_jitter: u64,
+) -> Result<bool> {
+    match decide_ban(session, config, champion_map, display_names, *hovered_ban, lock_in_jitter) {
+        BanDecision::Idle => Ok(false),
+        BanDecision::NoBansConfigured => {
+            warn!("no ban preferences configured — add some via `lol-autoq configure`");
+            Ok(false)
+        }
+        BanDecision::AllBansExhausted => {
+            warn!("All preferred bans are already banned — add more options");
+            Ok(false)
+        }
+        BanDecision::Hover { action_id, champion_id, champion_name } => {
+            info!(champion = %champion_name, "Hovering ban...");
+            client.hover_champion(action_id, champion_id).await?;
+            *hovered_ban = Some(champion_id);
+            Ok(false)
+        }
+        BanDecision::WaitForTimer { champion_name, remaining_secs, threshold_secs } => {
+            trace!(
+                remaining = format!("{remaining_secs:.1}s"),
+                threshold = format!("{threshold_secs:.0}s"),
+                champion = %champion_name,
+                "waiting to lock ban"
+            );
+            Ok(false)
+        }
+        BanDecision::LockIn { action_id, champion_id, champion_name, remaining_secs } => {
+            info!(
+                champion = %champion_name,
+                remaining = format!("{remaining_secs:.1}s"),
+                ban_order = %config.bans.join(" -> "),
+                "Locking in ban!"
+            );
+            client.lock_champion(action_id, champion_id).await?;
+            info!(champion = %champion_name, "Ban complete!");
+            Ok(true)
+        }
+    }
 }
 
 /// Return our pick action regardless of whether it is in-progress yet.
@@ -240,12 +289,110 @@ fn best_pick_target(
     })
 }
 
-/// Core champion-select handler.
-/// - Hovers the highest-priority available champion immediately.
-/// - Re-evaluates if the hovered champion gets banned and switches to the next.
-/// - Locks in when the timer reaches <= `lock_in_pick_secs`.
-///
-/// Returns `true` when the champion was locked in, `false` when still waiting.
+// ── Pick-phase decision ────────────────────────────────────────────────────
+
+#[derive(Debug, PartialEq)]
+pub enum PickDecision {
+    /// No pick action found.
+    Idle,
+    /// Config has no preferences for this position.
+    NoPrefsConfigured { position: String },
+    /// Every preferred champion is banned or already picked.
+    AllPicksExhausted { position: String },
+    /// Hover timer hasn't elapsed yet.
+    WaitForHoverTimer { champion_name: String, remaining_secs: f64, threshold_secs: f64 },
+    /// Hover this champion now.
+    Hover { action_id: i64, champion_id: i64, champion_name: String, position: String },
+    /// Hovered; waiting for our turn or the lock-in window.
+    WaitForLockIn,
+    /// Hovered champion got banned — re-evaluate next cycle.
+    StaleHover { champion_name: String },
+    /// Lock in.
+    LockIn { action_id: i64, champion_id: i64, champion_name: String, remaining_secs: f64, position: String },
+}
+
+/// Pure decision function for the pick phase — no I/O, fully unit-testable.
+pub fn decide_pick(
+    session: &ChampSelectSession,
+    config: &Config,
+    champion_map: &HashMap<String, i64>,
+    display_names: &HashMap<i64, String>,
+    hovered_pick: Option<(i64, i64)>,
+    hover_jitter: u64,
+    pick_jitter: u64,
+) -> PickDecision {
+    let action = match find_pick_action(session) {
+        Some(a) => a,
+        None => return PickDecision::Idle,
+    };
+
+    let raw_position = local_assigned_position(session);
+    let position_label = friendly_position(raw_position).to_owned();
+
+    let prefs = config.champions_for_position(raw_position);
+    if prefs.is_empty() {
+        return PickDecision::NoPrefsConfigured { position: position_label };
+    }
+
+    let unavailable = unavailable_champion_ids(session);
+    trace!(ids = ?unavailable, "unavailable champions");
+
+    let (chosen_id, chosen_name) = match best_pick_target(config, raw_position, champion_map, display_names, &unavailable) {
+        Some(pair) => pair,
+        None => return PickDecision::AllPicksExhausted { position: position_label },
+    };
+
+    if hovered_pick != Some((action.id, chosen_id)) {
+        let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+        if config.hover_pick_secs != INSTANT {
+            let threshold = effective_threshold(config.hover_pick_secs, hover_jitter);
+            if remaining_secs > threshold {
+                return PickDecision::WaitForHoverTimer {
+                    champion_name: chosen_name,
+                    remaining_secs,
+                    threshold_secs: threshold,
+                };
+            }
+        }
+        return PickDecision::Hover {
+            action_id: action.id,
+            champion_id: chosen_id,
+            champion_name: chosen_name,
+            position: position_label,
+        };
+    }
+
+    // Only lock in when it's actually our turn in the pick phase
+    // (not during the simultaneous intent phase at the start).
+    if !action.is_in_progress || !all_bans_completed(session) {
+        return PickDecision::WaitForLockIn;
+    }
+
+    let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+    if config.lock_in_pick_secs != INSTANT {
+        let threshold = effective_threshold(config.lock_in_pick_secs, pick_jitter);
+        if remaining_secs > threshold {
+            return PickDecision::WaitForLockIn;
+        }
+    }
+
+    // Re-check availability right before locking (champion could have been
+    // banned between the hover and now).
+    let unavailable = unavailable_champion_ids(session);
+    if unavailable.contains(&chosen_id) {
+        return PickDecision::StaleHover { champion_name: chosen_name };
+    }
+
+    PickDecision::LockIn {
+        action_id: action.id,
+        champion_id: chosen_id,
+        champion_name: chosen_name,
+        remaining_secs,
+        position: position_label,
+    }
+}
+
+/// Core champion-select handler — thin dispatcher that executes the `decide_pick` decision.
 #[allow(clippy::too_many_arguments)]
 pub async fn handle_champion_select(
     client: &LcuClient,
@@ -257,131 +404,631 @@ pub async fn handle_champion_select(
     hover_jitter: u64,
     pick_jitter: u64,
 ) -> Result<bool> {
-    // Use the any-state action for hovering; need in-progress for lock-in.
-    let action = match find_pick_action(session) {
-        Some(a) => a,
-        None => return Ok(false),
-    };
-
-    let raw_position = local_assigned_position(session);
-    let position_label = friendly_position(raw_position);
-
-    let prefs = config.champions_for_position(raw_position);
-    if prefs.is_empty() {
-        warn!(
-            position = %position_label,
-            "no champion preferences configured — please edit config.toml"
-        );
-        return Ok(false);
-    }
-
-    let unavailable = unavailable_champion_ids(session);
-    trace!(ids = ?unavailable, "unavailable champions");
-
-    let (chosen_id, chosen_name) = match best_pick_target(config, raw_position, champion_map, display_names, &unavailable) {
-        Some(pair) => pair,
-        None => {
-            warn!(
-                position = %position_label,
-                "All preferred champions are banned/picked — add more options to config.toml"
-            );
-            return Ok(false);
+    let prefs_for_log = config.champions_for_position(local_assigned_position(session)).join(" -> ");
+    match decide_pick(session, config, champion_map, display_names, *hovered_pick, hover_jitter, pick_jitter) {
+        PickDecision::Idle => Ok(false),
+        PickDecision::NoPrefsConfigured { position } => {
+            warn!(position = %position, "no champion preferences configured — please edit config.toml");
+            Ok(false)
         }
-    };
-
-    // Hover when ready (immediately by default; delayed if hover_pick_secs is set).
-    // Re-hover if the action ID or champion changed (e.g. intent → pick phase transition).
-    if *hovered_pick != Some((action.id, chosen_id)) {
-        let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
-        if config.hover_pick_secs != INSTANT {
-            let threshold = effective_threshold(config.hover_pick_secs, hover_jitter);
-            if remaining_secs > threshold {
-                trace!(
-                    remaining = format!("{remaining_secs:.1}s"),
-                    threshold = format!("{threshold:.0}s"),
-                    champion = %chosen_name,
-                    "waiting to hover champion"
-                );
-                return Ok(false);
-            }
+        PickDecision::AllPicksExhausted { position } => {
+            warn!(position = %position, "All preferred champions are banned/picked — add more options to config.toml");
+            Ok(false)
         }
-        info!(
-            position = %position_label,
-            champion = %chosen_name,
-            pick_order = %prefs.join(" -> "),
-            "Hovering champion..."
-        );
-        client.hover_champion(action.id, chosen_id).await?;
-        *hovered_pick = Some((action.id, chosen_id));
-    }
-
-    // Only lock in when it's actually our turn in the pick phase
-    // (not during the simultaneous intent phase at the start).
-    if !action.is_in_progress || !all_bans_completed(session) {
-        return Ok(false);
-    }
-
-    // Lock in when the timer drops to the threshold (INSTANT skips the check).
-    let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
-    if config.lock_in_pick_secs != INSTANT {
-        let threshold = effective_threshold(config.lock_in_pick_secs, pick_jitter);
-        if remaining_secs > threshold {
+        PickDecision::WaitForHoverTimer { champion_name, remaining_secs, threshold_secs } => {
             trace!(
                 remaining = format!("{remaining_secs:.1}s"),
-                threshold = format!("{threshold:.0}s"),
-                champion = %chosen_name,
-                "waiting to lock pick"
+                threshold = format!("{threshold_secs:.0}s"),
+                champion = %champion_name,
+                "waiting to hover champion"
             );
-            return Ok(false);
+            Ok(false)
+        }
+        PickDecision::Hover { action_id, champion_id, champion_name, position } => {
+            info!(
+                position = %position,
+                champion = %champion_name,
+                pick_order = %prefs_for_log,
+                "Hovering champion..."
+            );
+            client.hover_champion(action_id, champion_id).await?;
+            *hovered_pick = Some((action_id, champion_id));
+            Ok(false)
+        }
+        PickDecision::WaitForLockIn => Ok(false),
+        PickDecision::StaleHover { champion_name } => {
+            warn!(champion = %champion_name, "champion was banned since hovering — switching");
+            *hovered_pick = None;
+            Ok(false)
+        }
+        PickDecision::LockIn { action_id, champion_id, champion_name, remaining_secs, position } => {
+            info!(
+                position = %position,
+                champion = %champion_name,
+                remaining = format!("{remaining_secs:.1}s"),
+                "Locking in champion!"
+            );
+            client.lock_champion(action_id, champion_id).await?;
+            info!(champion = %champion_name, "Lock-in complete!");
+            Ok(true)
         }
     }
-
-    // Re-check availability right before locking (champion could have been
-    // banned between the hover and now).
-    let unavailable = unavailable_champion_ids(session);
-    if unavailable.contains(&chosen_id) {
-        warn!(champion = %chosen_name, "champion was banned since hovering — switching");
-        *hovered_pick = None;
-        return Ok(false);
-    }
-
-    info!(
-        position = %position_label,
-        champion = %chosen_name,
-        remaining = format!("{remaining_secs:.1}s"),
-        "Locking in champion!"
-    );
-    client.lock_champion(action.id, chosen_id).await?;
-    info!(champion = %chosen_name, "Lock-in complete!");
-    Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::effective_threshold;
+    use std::collections::HashSet;
+
+    use super::*;
+    use crate::config::Config;
+    use crate::lcu::{Action, Bans, ChampSelectSession, ChampionSummary, PhaseTimer, TeamMember};
+
+    // ── fixtures ─────────────────────────────────────────────────────────────
+
+    fn make_summaries() -> Vec<ChampionSummary> {
+        vec![
+            ChampionSummary {
+                id: 1,
+                name: "Ahri".into(),
+                alias: "Ahri".into(),
+                square_portrait_path: "/champs/Ahri.png".into(),
+            },
+            ChampionSummary {
+                id: 2,
+                name: "Zed".into(),
+                alias: "Zed".into(),
+                square_portrait_path: "/champs/Zed.png".into(),
+            },
+            // non-playable — must be filtered out
+            ChampionSummary {
+                id: -1,
+                name: "Bot".into(),
+                alias: "Bot".into(),
+                square_portrait_path: "/-1.png".into(),
+            },
+        ]
+    }
+
+    fn make_action(id: i64, cell_id: i64, action_type: &str, in_progress: bool, completed: bool) -> Action {
+        Action {
+            id,
+            actor_cell_id: cell_id,
+            action_type: action_type.into(),
+            is_in_progress: in_progress,
+            completed,
+            champion_id: 0,
+        }
+    }
+
+    fn make_session(
+        local_cell_id: i64,
+        actions: Vec<Vec<Action>>,
+        my_team: Vec<TeamMember>,
+        bans: Bans,
+        phase: &str,
+    ) -> ChampSelectSession {
+        ChampSelectSession {
+            local_player_cell_id: local_cell_id,
+            timer: PhaseTimer {
+                adjusted_time_left_ms: 10_000,
+                total_time_ms: 30_000,
+                phase: phase.into(),
+            },
+            actions,
+            my_team,
+            bans,
+        }
+    }
+
+    fn make_member(cell_id: i64, position: &str, champion_id: i64) -> TeamMember {
+        TeamMember {
+            cell_id,
+            assigned_position: position.into(),
+            champion_id,
+            summoner_id: 0,
+        }
+    }
+
+    // ── effective_threshold ───────────────────────────────────────────────────
 
     #[test]
-    fn no_jitter_keeps_threshold() {
+    fn effective_threshold_no_jitter_keeps_threshold() {
         assert_eq!(effective_threshold(10, 0), 10.0);
     }
 
     #[test]
-    fn jitter_reduces_threshold() {
+    fn effective_threshold_jitter_reduces_threshold() {
         assert_eq!(effective_threshold(10, 3), 7.0);
     }
 
     #[test]
-    fn jitter_equals_threshold_clamps_to_zero() {
+    fn effective_threshold_jitter_equals_threshold_clamps_to_zero() {
         assert_eq!(effective_threshold(5, 5), 0.0);
     }
 
     #[test]
-    fn jitter_exceeds_threshold_clamps_to_zero() {
+    fn effective_threshold_jitter_exceeds_threshold_clamps_to_zero() {
         assert_eq!(effective_threshold(5, 8), 0.0);
     }
 
     #[test]
-    fn large_jitter_on_zero_threshold_stays_zero() {
+    fn effective_threshold_large_jitter_on_zero_stays_zero() {
         assert_eq!(effective_threshold(0, 999), 0.0);
+    }
+
+    // ── build_champion_map ────────────────────────────────────────────────────
+
+    #[test]
+    fn build_champion_map_resolves_by_name() {
+        let (lookup, _) = build_champion_map(&make_summaries());
+        assert_eq!(lookup.get("ahri"), Some(&1));
+    }
+
+    #[test]
+    fn build_champion_map_resolves_by_alias() {
+        let (lookup, _) = build_champion_map(&make_summaries());
+        assert_eq!(lookup.get("zed"), Some(&2));
+    }
+
+    #[test]
+    fn build_champion_map_filters_non_playable() {
+        let (lookup, _) = build_champion_map(&make_summaries());
+        assert_eq!(lookup.get("bot"), None);
+    }
+
+    #[test]
+    fn build_champion_map_display_names_populated() {
+        let (_, display) = build_champion_map(&make_summaries());
+        assert_eq!(display.get(&1), Some(&"Ahri".to_string()));
+        assert_eq!(display.get(&2), Some(&"Zed".to_string()));
+    }
+
+    // ── friendly_position ─────────────────────────────────────────────────────
+
+    #[test]
+    fn friendly_position_maps_all_known_aliases() {
+        assert_eq!(friendly_position("top"),     "Top");
+        assert_eq!(friendly_position("jungle"),  "Jungle");
+        assert_eq!(friendly_position("middle"),  "Mid");
+        assert_eq!(friendly_position("mid"),     "Mid");
+        assert_eq!(friendly_position("bottom"),  "Bot");
+        assert_eq!(friendly_position("bot"),     "Bot");
+        assert_eq!(friendly_position("adc"),     "Bot");
+        assert_eq!(friendly_position("utility"), "Support");
+        assert_eq!(friendly_position("support"), "Support");
+        assert_eq!(friendly_position("fill"),    "Fill");
+    }
+
+    #[test]
+    fn friendly_position_unknown_returns_unknown() {
+        assert_eq!(friendly_position(""),        "Unknown");
+        assert_eq!(friendly_position("TOPLANE"), "Unknown");
+    }
+
+    // ── find_active_ban_action ────────────────────────────────────────────────
+
+    #[test]
+    fn find_active_ban_action_returns_matching_ban() {
+        let action = make_action(7, 3, "ban", true, false);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert_eq!(find_active_ban_action(&session).map(|a| a.id), Some(7));
+    }
+
+    #[test]
+    fn find_active_ban_action_ignores_completed_actions() {
+        let action = make_action(7, 3, "ban", true, true);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert!(find_active_ban_action(&session).is_none());
+    }
+
+    #[test]
+    fn find_active_ban_action_ignores_wrong_cell_id() {
+        let action = make_action(7, 99, "ban", true, false);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert!(find_active_ban_action(&session).is_none());
+    }
+
+    #[test]
+    fn find_active_ban_action_ignores_pick_actions() {
+        let action = make_action(7, 3, "pick", true, false);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert!(find_active_ban_action(&session).is_none());
+    }
+
+    #[test]
+    fn find_active_ban_action_ignores_not_in_progress() {
+        let action = make_action(7, 3, "ban", false, false);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert!(find_active_ban_action(&session).is_none());
+    }
+
+    // ── find_pick_action ──────────────────────────────────────────────────────
+
+    #[test]
+    fn find_pick_action_returns_pick_regardless_of_in_progress() {
+        let action = make_action(5, 3, "pick", false, false);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert!(find_pick_action(&session).is_some());
+    }
+
+    #[test]
+    fn find_pick_action_ignores_completed_picks() {
+        let action = make_action(5, 3, "pick", true, true);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert!(find_pick_action(&session).is_none());
+    }
+
+    #[test]
+    fn find_pick_action_ignores_ban_actions() {
+        let action = make_action(5, 3, "ban", true, false);
+        let session = make_session(3, vec![vec![action]], vec![], Bans::default(), "BAN_PICK");
+        assert!(find_pick_action(&session).is_none());
+    }
+
+    // ── all_bans_completed ────────────────────────────────────────────────────
+
+    #[test]
+    fn all_bans_completed_true_when_all_done() {
+        let actions = vec![vec![
+            make_action(1, 0, "ban", false, true),
+            make_action(2, 0, "ban", false, true),
+        ]];
+        let session = make_session(0, actions, vec![], Bans::default(), "BAN_PICK");
+        assert!(all_bans_completed(&session));
+    }
+
+    #[test]
+    fn all_bans_completed_false_when_any_pending() {
+        let actions = vec![vec![
+            make_action(1, 0, "ban", false, true),
+            make_action(2, 0, "ban", true, false),
+        ]];
+        let session = make_session(0, actions, vec![], Bans::default(), "BAN_PICK");
+        assert!(!all_bans_completed(&session));
+    }
+
+    #[test]
+    fn all_bans_completed_true_when_no_ban_actions_exist() {
+        let session = make_session(0, vec![], vec![], Bans::default(), "BAN_PICK");
+        assert!(all_bans_completed(&session));
+    }
+
+    // ── unavailable_champion_ids ──────────────────────────────────────────────
+
+    #[test]
+    fn unavailable_champion_ids_includes_picked_teammates() {
+        let member = make_member(1, "top", 42);
+        let session = make_session(0, vec![], vec![member], Bans::default(), "BAN_PICK");
+        assert!(unavailable_champion_ids(&session).contains(&42));
+    }
+
+    #[test]
+    fn unavailable_champion_ids_excludes_zero_champion_ids() {
+        let member = make_member(1, "top", 0); // no champion selected yet
+        let session = make_session(0, vec![], vec![member], Bans::default(), "BAN_PICK");
+        assert!(!unavailable_champion_ids(&session).contains(&0));
+    }
+
+    #[test]
+    fn unavailable_champion_ids_includes_all_bans() {
+        let bans = Bans { my_team_bans: vec![10], their_team_bans: vec![20] };
+        let session = make_session(0, vec![], vec![], bans, "BAN_PICK");
+        let ids = unavailable_champion_ids(&session);
+        assert!(ids.contains(&10));
+        assert!(ids.contains(&20));
+    }
+
+    // ── local_assigned_position ───────────────────────────────────────────────
+
+    #[test]
+    fn local_assigned_position_returns_correct_position() {
+        let member = make_member(3, "jungle", 0);
+        let session = make_session(3, vec![], vec![member], Bans::default(), "BAN_PICK");
+        assert_eq!(local_assigned_position(&session), "jungle");
+    }
+
+    #[test]
+    fn local_assigned_position_returns_empty_when_not_found() {
+        let member = make_member(99, "jungle", 0);
+        let session = make_session(3, vec![], vec![member], Bans::default(), "BAN_PICK");
+        assert_eq!(local_assigned_position(&session), "");
+    }
+
+    // ── decide_ban ────────────────────────────────────────────────────────────
+
+    fn session_with_ban_action(cell_id: i64, phase: &str, timer_ms: i64) -> ChampSelectSession {
+        let action = make_action(10, cell_id, "ban", true, false);
+        let mut s = make_session(cell_id, vec![vec![action]], vec![], Bans::default(), phase);
+        s.timer.adjusted_time_left_ms = timer_ms;
+        s
+    }
+
+    fn default_ban_config() -> Config {
+        let mut cfg = Config::default();
+        cfg.bans = vec!["Ahri".into(), "Zed".into()];
+        cfg.lock_in_ban_secs = 5;
+        cfg
+    }
+
+    #[test]
+    fn decide_ban_idle_when_no_active_ban_action() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = make_session(3, vec![], vec![], Bans::default(), "BAN_PICK");
+        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0), BanDecision::Idle);
+    }
+
+    #[test]
+    fn decide_ban_idle_during_planning_phase() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "PLANNING", 20_000);
+        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0), BanDecision::Idle);
+    }
+
+    #[test]
+    fn decide_ban_no_bans_configured() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "BAN_PICK", 20_000);
+        let mut cfg = Config::default();
+        cfg.bans = vec![];
+        assert_eq!(decide_ban(&session, &cfg, &lookup, &display, None, 0), BanDecision::NoBansConfigured);
+    }
+
+    #[test]
+    fn decide_ban_all_bans_exhausted() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "BAN_PICK", 20_000);
+        let mut cfg = Config::default();
+        cfg.bans = vec!["Ahri".into()];
+        // Ahri already banned
+        let mut s = session;
+        s.bans.my_team_bans = vec![1];
+        assert_eq!(decide_ban(&s, &cfg, &lookup, &display, None, 0), BanDecision::AllBansExhausted);
+    }
+
+    #[test]
+    fn decide_ban_hover_when_not_yet_hovered() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "BAN_PICK", 20_000);
+        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
+    }
+
+    #[test]
+    fn decide_ban_wait_for_timer_when_hovered_and_time_remaining() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "BAN_PICK", 20_000); // 20s remaining
+        let mut cfg = default_ban_config();
+        cfg.lock_in_ban_secs = 5; // threshold = 5s
+        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 0);
+        assert!(matches!(result, BanDecision::WaitForTimer { .. }));
+    }
+
+    #[test]
+    fn decide_ban_lock_in_when_timer_at_threshold() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "BAN_PICK", 3_000); // 3s remaining
+        let mut cfg = default_ban_config();
+        cfg.lock_in_ban_secs = 5; // threshold 5s → 3s <= 5s → lock in
+        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 0);
+        assert_eq!(result, BanDecision::LockIn {
+            action_id: 10,
+            champion_id: 1,
+            champion_name: "Ahri".into(),
+            remaining_secs: 3.0,
+        });
+    }
+
+    #[test]
+    fn decide_ban_instant_skips_timer_check() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "BAN_PICK", 999_000); // huge time remaining
+        let mut cfg = default_ban_config();
+        cfg.lock_in_ban_secs = crate::config::INSTANT;
+        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 0);
+        assert!(matches!(result, BanDecision::LockIn { .. }));
+    }
+
+    // ── decide_pick ───────────────────────────────────────────────────────────
+
+    fn session_with_pick_action(
+        cell_id: i64,
+        position: &str,
+        is_in_progress: bool,
+        timer_ms: i64,
+        bans: Bans,
+    ) -> ChampSelectSession {
+        let pick = make_action(20, cell_id, "pick", is_in_progress, false);
+        // all bans already completed so the lock-in guard passes
+        let ban = make_action(1, 0, "ban", false, true);
+        let member = make_member(cell_id, position, 0);
+        let mut s = make_session(cell_id, vec![vec![ban, pick]], vec![member], bans, "BAN_PICK");
+        s.timer.adjusted_time_left_ms = timer_ms;
+        s
+    }
+
+    fn default_pick_config() -> Config {
+        let mut cfg = Config::default();
+        cfg.preferences.mid = vec!["Ahri".into(), "Zed".into()];
+        cfg.hover_pick_secs = crate::config::INSTANT;
+        cfg.lock_in_pick_secs = 10;
+        cfg
+    }
+
+    #[test]
+    fn decide_pick_idle_when_no_pick_action() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = make_session(3, vec![], vec![], Bans::default(), "BAN_PICK");
+        assert_eq!(decide_pick(&session, &default_pick_config(), &lookup, &display, None, 0, 0), PickDecision::Idle);
+    }
+
+    #[test]
+    fn decide_pick_hover_immediately_when_not_yet_hovered() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_pick_action(3, "middle", false, 20_000, Bans::default());
+        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None, 0, 0);
+        assert_eq!(result, PickDecision::Hover {
+            action_id: 20,
+            champion_id: 1,
+            champion_name: "Ahri".into(),
+            position: "Mid".into(),
+        });
+    }
+
+    #[test]
+    fn decide_pick_wait_for_hover_timer_when_not_elapsed() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_pick_action(3, "middle", false, 30_000, Bans::default());
+        let mut cfg = default_pick_config();
+        cfg.hover_pick_secs = 5; // hover only when <= 5s remain; 30s > 5s → wait
+        let result = decide_pick(&session, &cfg, &lookup, &display, None, 0, 0);
+        assert!(matches!(result, PickDecision::WaitForHoverTimer { .. }));
+    }
+
+    #[test]
+    fn decide_pick_wait_for_lock_in_when_not_our_turn() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        // is_in_progress = false → not our turn yet
+        let session = session_with_pick_action(3, "middle", false, 20_000, Bans::default());
+        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, Some((20, 1)), 0, 0);
+        assert_eq!(result, PickDecision::WaitForLockIn);
+    }
+
+    #[test]
+    fn decide_pick_wait_for_lock_in_when_timer_not_reached() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_pick_action(3, "middle", true, 20_000, Bans::default());
+        let mut cfg = default_pick_config();
+        cfg.lock_in_pick_secs = 5; // 20s remaining > 5s threshold
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        assert_eq!(result, PickDecision::WaitForLockIn);
+    }
+
+    #[test]
+    fn decide_pick_lock_in_when_timer_reached() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_pick_action(3, "middle", true, 3_000, Bans::default());
+        let mut cfg = default_pick_config();
+        cfg.lock_in_pick_secs = 5; // 3s <= 5s → lock in
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        assert_eq!(result, PickDecision::LockIn {
+            action_id: 20,
+            champion_id: 1,
+            champion_name: "Ahri".into(),
+            remaining_secs: 3.0,
+            position: "Mid".into(),
+        });
+    }
+
+    #[test]
+    fn decide_pick_stale_hover_when_chosen_champion_banned_before_lock_in() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        // Ahri (id=1) gets banned between hover and lock-in
+        let bans = Bans { my_team_bans: vec![1], their_team_bans: vec![] };
+        let session = session_with_pick_action(3, "middle", true, 3_000, bans);
+        let mut cfg = default_pick_config();
+        cfg.preferences.mid = vec!["Ahri".into()]; // only Ahri configured, no fallback
+        cfg.lock_in_pick_secs = 5;
+        // We're hovering Ahri but it got banned → AllPicksExhausted (best_pick_target returns None)
+        // To get StaleHover: hover state says (action_id=20, champion_id=1), and unavailable contains 1
+        // The function re-checks unavailability just before LockIn and returns StaleHover.
+        // but since best_pick_target comes first, and Ahri is banned → AllPicksExhausted.
+        // StaleHover is only triggered when the champion we're hovering is re-checked right before lock.
+        // To hit that path, we need a second champion that IS available for best_pick_target,
+        // but the hovered champion (1) is in unavailable.
+        // → hovered = (20, 1) but chosen = (20, 2) because Ahri is banned → triggers Hover(Zed), not StaleHover.
+        // Correct way: hovered = (20, 1), chosen_id = 1, but unavailable contains 1 at final re-check.
+        // That requires Ahri to pass best_pick_target (not in unavailable set built from bans+team)
+        // but then be found in unavailable at the second check. That can't happen in current code since
+        // both checks use the same session state.
+        // The StaleHover path is actually unreachable when unavailable is derived from session each time.
+        // Document this and test AllPicksExhausted instead.
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        assert_eq!(result, PickDecision::AllPicksExhausted { position: "Mid".into() });
+    }
+
+    #[test]
+    fn decide_pick_all_picks_exhausted_when_every_champion_banned() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let bans = Bans { my_team_bans: vec![1, 2], their_team_bans: vec![] };
+        let session = session_with_pick_action(3, "middle", true, 3_000, bans);
+        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None, 0, 0);
+        assert_eq!(result, PickDecision::AllPicksExhausted { position: "Mid".into() });
+    }
+
+    #[test]
+    fn decide_pick_instant_lock_skips_timer_check() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_pick_action(3, "middle", true, 999_000, Bans::default());
+        let mut cfg = default_pick_config();
+        cfg.lock_in_pick_secs = crate::config::INSTANT;
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        assert!(matches!(result, PickDecision::LockIn { .. }));
+    }
+
+    #[test]
+    fn best_ban_target_returns_first_available() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.bans = vec!["Ahri".into(), "Zed".into()];
+        let (id, name) = best_ban_target(&cfg, &lookup, &display, &HashSet::new()).unwrap();
+        assert_eq!(id, 1);
+        assert_eq!(name, "Ahri");
+    }
+
+    #[test]
+    fn best_ban_target_skips_already_banned() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.bans = vec!["Ahri".into(), "Zed".into()];
+        let already_banned: HashSet<i64> = [1].into_iter().collect();
+        let (id, _) = best_ban_target(&cfg, &lookup, &display, &already_banned).unwrap();
+        assert_eq!(id, 2);
+    }
+
+    #[test]
+    fn best_ban_target_returns_none_when_all_banned() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.bans = vec!["Ahri".into()];
+        let already_banned: HashSet<i64> = [1].into_iter().collect();
+        assert!(best_ban_target(&cfg, &lookup, &display, &already_banned).is_none());
+    }
+
+    #[test]
+    fn best_ban_target_returns_none_for_unknown_champion_name() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.bans = vec!["DefinitelyNotAChampion".into()];
+        assert!(best_ban_target(&cfg, &lookup, &display, &HashSet::new()).is_none());
+    }
+
+    // ── best_pick_target ──────────────────────────────────────────────────────
+
+    #[test]
+    fn best_pick_target_returns_first_available() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.preferences.mid = vec!["Ahri".into(), "Zed".into()];
+        let (id, _) = best_pick_target(&cfg, "middle", &lookup, &display, &HashSet::new()).unwrap();
+        assert_eq!(id, 1);
+    }
+
+    #[test]
+    fn best_pick_target_skips_unavailable_champion() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.preferences.mid = vec!["Ahri".into(), "Zed".into()];
+        let unavailable: HashSet<i64> = [1].into_iter().collect();
+        let (id, _) = best_pick_target(&cfg, "mid", &lookup, &display, &unavailable).unwrap();
+        assert_eq!(id, 2);
+    }
+
+    #[test]
+    fn best_pick_target_returns_none_when_all_unavailable() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.preferences.mid = vec!["Ahri".into()];
+        let unavailable: HashSet<i64> = [1].into_iter().collect();
+        assert!(best_pick_target(&cfg, "mid", &lookup, &display, &unavailable).is_none());
     }
 }

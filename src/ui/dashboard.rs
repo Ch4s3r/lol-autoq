@@ -13,19 +13,11 @@ pub fn Dashboard() -> Element {
     // Extract values immediately and drop the read guards before building RSX
     let (chip_class, dot_class, conn_label) = {
         let conn = state.connection.read();
-        if conn.is_connected() {
-            (
-                "chip chip-connected",
-                "chip-dot chip-dot-connected",
-                conn.label().to_string(),
-            )
-        } else {
-            (
-                "chip chip-searching",
-                "chip-dot chip-dot-searching",
-                conn.label().to_string(),
-            )
-        }
+        (
+            conn.chip_class(),
+            conn.dot_class(),
+            conn.label().to_string(),
+        )
     };
     let phase = state.phase.read().clone();
     let activities: Vec<_> = state.activities.read().iter().cloned().collect();

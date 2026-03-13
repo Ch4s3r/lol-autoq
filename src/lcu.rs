@@ -333,6 +333,97 @@ impl ChampionSummary {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── LockfileData::from_str ────────────────────────────────────────────────
+
+    #[test]
+    fn lockfile_parse_extracts_port_and_password() {
+        let data = LockfileData::from_str("LeagueClient:12345:54321:s3cr3t-p4ss:https").unwrap();
+        assert_eq!(data.port, 54321);
+        assert_eq!(data.password, "s3cr3t-p4ss");
+    }
+
+    #[test]
+    fn lockfile_parse_trims_surrounding_whitespace() {
+        let data = LockfileData::from_str("  LeagueClient:12345:54321:mypassword:https  ").unwrap();
+        assert_eq!(data.port, 54321);
+        assert_eq!(data.password, "mypassword");
+    }
+
+    #[test]
+    fn lockfile_parse_handles_trailing_newline() {
+        let data = LockfileData::from_str("LeagueClient:12345:54321:mypassword:https\n").unwrap();
+        assert_eq!(data.port, 54321);
+        assert_eq!(data.password, "mypassword");
+    }
+
+    #[test]
+    fn lockfile_parse_rejects_malformed_input() {
+        assert!(LockfileData::from_str("not_a_lockfile").is_err());
+        assert!(LockfileData::from_str("").is_err());
+    }
+
+    // ── ChampionSummary::is_playable ──────────────────────────────────────────
+
+    #[test]
+    fn champion_summary_is_playable_accepts_valid_champion() {
+        let c = ChampionSummary {
+            id: 103,
+            name: "Ahri".into(),
+            alias: "Ahri".into(),
+            square_portrait_path: "/lol-game-data/assets/v1/champion-icons/103.png".into(),
+        };
+        assert!(c.is_playable());
+    }
+
+    #[test]
+    fn champion_summary_is_playable_rejects_negative_id() {
+        let c = ChampionSummary {
+            id: -1,
+            name: "Bot".into(),
+            alias: "Bot".into(),
+            square_portrait_path: "/champs/Bot.png".into(),
+        };
+        assert!(!c.is_playable());
+    }
+
+    #[test]
+    fn champion_summary_is_playable_rejects_placeholder_path() {
+        let c = ChampionSummary {
+            id: 1,
+            name: "Test".into(),
+            alias: "Test".into(),
+            square_portrait_path: "/lol-game-data/assets/v1/champion-icons/-1.png".into(),
+        };
+        assert!(!c.is_playable());
+    }
+
+    #[test]
+    fn champion_summary_is_playable_rejects_empty_name() {
+        let c = ChampionSummary {
+            id: 1,
+            name: "".into(),
+            alias: "Test".into(),
+            square_portrait_path: "/champs/Test.png".into(),
+        };
+        assert!(!c.is_playable());
+    }
+
+    #[test]
+    fn champion_summary_is_playable_rejects_empty_portrait_path() {
+        let c = ChampionSummary {
+            id: 1,
+            name: "Test".into(),
+            alias: "Test".into(),
+            square_portrait_path: "".into(),
+        };
+        assert!(!c.is_playable());
+    }
+}
+
 /// Timer info embedded in a champ-select session.
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct PhaseTimer {

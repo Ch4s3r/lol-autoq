@@ -26,6 +26,12 @@ impl ConnectionState {
     pub fn is_connected(&self) -> bool {
         matches!(self, Self::Connected { .. })
     }
+    pub fn chip_class(&self) -> &'static str {
+        if self.is_connected() { "chip chip-connected" } else { "chip chip-searching" }
+    }
+    pub fn dot_class(&self) -> &'static str {
+        if self.is_connected() { "chip-dot chip-dot-connected" } else { "chip-dot chip-dot-searching" }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -182,5 +188,119 @@ impl AppState {
         if log.len() > 25 {
             log.pop_back();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── ConnectionState ───────────────────────────────────────────────────────
+
+    #[test]
+    fn connection_state_disconnected_is_not_connected() {
+        assert!(!ConnectionState::Disconnected.is_connected());
+    }
+
+    #[test]
+    fn connection_state_searching_is_not_connected() {
+        assert!(!ConnectionState::Searching.is_connected());
+    }
+
+    #[test]
+    fn connection_state_connected_is_connected() {
+        assert!(ConnectionState::Connected { port: 12345 }.is_connected());
+    }
+
+    #[test]
+    fn connection_state_disconnected_label() {
+        assert_eq!(ConnectionState::Disconnected.label(), "Searching for LCU…");
+        assert_eq!(ConnectionState::Searching.label(), "Searching for LCU…");
+    }
+
+    #[test]
+    fn connection_state_connected_label() {
+        assert_eq!(ConnectionState::Connected { port: 1 }.label(), "Connected to LCU");
+    }
+
+    #[test]
+    fn connection_state_chip_class_connected() {
+        assert_eq!(ConnectionState::Connected { port: 1 }.chip_class(), "chip chip-connected");
+        assert_eq!(ConnectionState::Connected { port: 1 }.dot_class(), "chip-dot chip-dot-connected");
+    }
+
+    #[test]
+    fn connection_state_chip_class_searching() {
+        assert_eq!(ConnectionState::Searching.chip_class(), "chip chip-searching");
+        assert_eq!(ConnectionState::Searching.dot_class(), "chip-dot chip-dot-searching");
+        assert_eq!(ConnectionState::Disconnected.chip_class(), "chip chip-searching");
+    }
+
+    // ── GamePhase::from_lcu ───────────────────────────────────────────────────
+
+    #[test]
+    fn game_phase_from_lcu_maps_all_known_strings() {
+        assert_eq!(GamePhase::from_lcu("None"),           GamePhase::None);
+        assert_eq!(GamePhase::from_lcu("Lobby"),          GamePhase::Lobby);
+        assert_eq!(GamePhase::from_lcu("Matchmaking"),    GamePhase::Matchmaking);
+        assert_eq!(GamePhase::from_lcu("ReadyCheck"),     GamePhase::ReadyCheck);
+        assert_eq!(GamePhase::from_lcu("ChampSelect"),    GamePhase::ChampSelect);
+        assert_eq!(GamePhase::from_lcu("GameStart"),      GamePhase::GameStart);
+        assert_eq!(GamePhase::from_lcu("InProgress"),     GamePhase::InProgress);
+        assert_eq!(GamePhase::from_lcu("EndOfGame"),      GamePhase::EndOfGame);
+        assert_eq!(GamePhase::from_lcu("WaitingForStats"),GamePhase::EndOfGame);
+        assert_eq!(GamePhase::from_lcu("PreEndOfGame"),   GamePhase::EndOfGame);
+    }
+
+    #[test]
+    fn game_phase_from_lcu_unknown_preserves_string() {
+        assert_eq!(GamePhase::from_lcu("SomeNewPhase"), GamePhase::Unknown("SomeNewPhase".into()));
+    }
+
+    // ── GamePhase::css_class ──────────────────────────────────────────────────
+
+    #[test]
+    fn game_phase_css_class_returns_distinct_classes() {
+        // Each reachable phase must return a non-empty, CSS-safe class string.
+        let phases = [
+            GamePhase::None, GamePhase::Lobby, GamePhase::Matchmaking, GamePhase::ReadyCheck,
+            GamePhase::ChampSelect, GamePhase::GameStart, GamePhase::InProgress,
+            GamePhase::EndOfGame, GamePhase::Unknown("x".into()),
+        ];
+        for phase in &phases {
+            let cls = phase.css_class();
+            assert!(!cls.is_empty(), "empty css_class for {phase:?}");
+            assert!(!cls.contains(' ') || cls.starts_with("phase-"), "unexpected class format: {cls}");
+        }
+    }
+
+    #[test]
+    fn game_phase_lobby_and_none_share_css_class() {
+        assert_eq!(GamePhase::None.css_class(), GamePhase::Lobby.css_class());
+    }
+
+    // ── GamePhase::icon ───────────────────────────────────────────────────────
+
+    #[test]
+    fn game_phase_icon_starts_with_fa_solid_prefix() {
+        let phases = [
+            GamePhase::None, GamePhase::Lobby, GamePhase::Matchmaking, GamePhase::ReadyCheck,
+            GamePhase::ChampSelect, GamePhase::GameStart, GamePhase::InProgress,
+            GamePhase::EndOfGame, GamePhase::Unknown("x".into()),
+        ];
+        for phase in &phases {
+            let icon = phase.icon();
+            assert!(icon.starts_with("fa-solid ") || icon.starts_with("fa-regular ") || icon.starts_with("fa-brands "),
+                "icon class does not start with a Font Awesome prefix: {icon}");
+        }
+    }
+
+    // ── ActivityKind::css_class ───────────────────────────────────────────────
+
+    #[test]
+    fn activity_kind_css_class_all_variants() {
+        assert_eq!(ActivityKind::Info.css_class(), "activity-info");
+        assert_eq!(ActivityKind::Success.css_class(), "activity-success");
+        assert_eq!(ActivityKind::Warning.css_class(), "activity-warning");
     }
 }

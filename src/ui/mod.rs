@@ -72,7 +72,7 @@ const POLL_ACTIVE: Duration = Duration::from_millis(100);
 const POLL_POSTGAME: Duration = Duration::from_secs(2);
 const POLL_INGAME: Duration = Duration::from_secs(30);
 
-fn poll_interval(phase: &str) -> Duration {
+pub(crate) fn poll_interval(phase: &str) -> Duration {
     match phase {
         "InProgress" => POLL_INGAME,
         "WaitingForStats" | "PreEndOfGame" | "EndOfGame" => POLL_POSTGAME,
@@ -286,11 +286,54 @@ async fn inner_poll_loop(
     }
 }
 
-fn roll_jitter(max_secs: u64) -> u64 {
+pub(crate) fn roll_jitter(max_secs: u64) -> u64 {
     if max_secs == 0 {
         return 0;
     }
     rand::random_range(0..=max_secs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── poll_interval ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn poll_interval_ingame_is_30s() {
+        assert_eq!(poll_interval("InProgress"), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn poll_interval_postgame_phases_are_2s() {
+        assert_eq!(poll_interval("WaitingForStats"), Duration::from_secs(2));
+        assert_eq!(poll_interval("PreEndOfGame"),    Duration::from_secs(2));
+        assert_eq!(poll_interval("EndOfGame"),       Duration::from_secs(2));
+    }
+
+    #[test]
+    fn poll_interval_active_phases_are_100ms() {
+        for phase in &["ReadyCheck", "ChampSelect", "Lobby", "None", "Matchmaking", ""] {
+            assert_eq!(poll_interval(phase), Duration::from_millis(100), "failed for phase {phase:?}");
+        }
+    }
+
+    // ── roll_jitter ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn roll_jitter_zero_max_always_returns_zero() {
+        for _ in 0..100 {
+            assert_eq!(roll_jitter(0), 0);
+        }
+    }
+
+    #[test]
+    fn roll_jitter_result_within_range() {
+        for _ in 0..200 {
+            let j = roll_jitter(10);
+            assert!(j <= 10, "jitter {j} exceeded max of 10");
+        }
+    }
 }
 
 async fn load_champion_data_with_retry(
