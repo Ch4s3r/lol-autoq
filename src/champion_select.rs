@@ -58,6 +58,7 @@ fn best_ban_target(
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
     already_banned: &HashSet<i64>,
+    teammate_ban_hovers: &HashSet<i64>,
 ) -> Option<(i64, String)> {
     config.bans.iter().find_map(|pref_name| {
         let key = pref_name.to_ascii_lowercase();
@@ -68,6 +69,10 @@ fn best_ban_target(
             }
             Some(&id) if already_banned.contains(&id) => {
                 trace!(champion = %pref_name, "already banned — skipping");
+                None
+            }
+            Some(&id) if teammate_ban_hovers.contains(&id) => {
+                trace!(champion = %pref_name, "teammate is already banning this — skipping");
                 None
             }
             Some(&id) => {
@@ -133,7 +138,21 @@ pub fn decide_ban(
         .copied()
         .collect();
 
-    let (chosen_id, chosen_name) = match best_ban_target(config, champion_map, display_names, &already_banned) {
+    // Champions another teammate has already hovered for banning should be
+    // skipped so we don't duplicate their intent.
+    let teammate_ban_hovers: HashSet<i64> = session
+        .actions
+        .iter()
+        .flatten()
+        .filter(|a| {
+            a.action_type == "ban"
+                && a.actor_cell_id != session.local_player_cell_id
+                && a.champion_id != 0
+        })
+        .map(|a| a.champion_id)
+        .collect();
+
+    let (chosen_id, chosen_name) = match best_ban_target(config, champion_map, display_names, &already_banned, &teammate_ban_hovers) {
         Some(pair) => pair,
         None => return BanDecision::AllBansExhausted,
     };
@@ -970,7 +989,7 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         let mut cfg = Config::default();
         cfg.bans = vec!["Ahri".into(), "Zed".into()];
-        let (id, name) = best_ban_target(&cfg, &lookup, &display, &HashSet::new()).unwrap();
+        let (id, name) = best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &HashSet::new()).unwrap();
         assert_eq!(id, 1);
         assert_eq!(name, "Ahri");
     }
@@ -981,7 +1000,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.bans = vec!["Ahri".into(), "Zed".into()];
         let already_banned: HashSet<i64> = [1].into_iter().collect();
-        let (id, _) = best_ban_target(&cfg, &lookup, &display, &already_banned).unwrap();
+        let (id, _) = best_ban_target(&cfg, &lookup, &display, &already_banned, &HashSet::new()).unwrap();
         assert_eq!(id, 2);
     }
 
@@ -991,7 +1010,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.bans = vec!["Ahri".into()];
         let already_banned: HashSet<i64> = [1].into_iter().collect();
-        assert!(best_ban_target(&cfg, &lookup, &display, &already_banned).is_none());
+        assert!(best_ban_target(&cfg, &lookup, &display, &already_banned, &HashSet::new()).is_none());
     }
 
     #[test]
@@ -999,7 +1018,87 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         let mut cfg = Config::default();
         cfg.bans = vec!["DefinitelyNotAChampion".into()];
-        assert!(best_ban_target(&cfg, &lookup, &display, &HashSet::new()).is_none());
+        assert!(best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &HashSet::new()).is_none());
+    }
+
+    #[test]
+    fn best_ban_target_skips_champion_hovered_by_teammate() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.bans = vec!["Ahri".into(), "Zed".into()];
+        // Ahri (id=1) is being hovered by a teammate for banning
+        let teammate_hovers: HashSet<i64> = [1].into_iter().collect();
+        let (id, name) = best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &teammate_hovers).unwrap();
+        assert_eq!(id, 2);
+        assert_eq!(name, "Zed");
+    }
+
+    #[test]
+    fn best_ban_target_returns_none_when_all_champions_covered_by_teammates() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = Config::default();
+        cfg.bans = vec!["Ahri".into(), "Zed".into()];
+        // Both Ahri and Zed are already being hovered by teammates
+        let teammate_hovers: HashSet<i64> = [1, 2].into_iter().collect();
+        assert!(best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &teammate_hovers).is_none());
+    }
+
+    // ── decide_ban: teammate hover integration ────────────────────────────────
+
+    fn make_action_with_champ(id: i64, cell_id: i64, action_type: &str, in_progress: bool, completed: bool, champion_id: i64) -> Action {
+        Action { id, actor_cell_id: cell_id, action_type: action_type.into(), is_in_progress: in_progress, completed, champion_id }
+    }
+
+    #[test]
+    fn decide_ban_skips_to_next_when_teammate_hovering_first_choice() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        // local player is cell 3; teammate (cell 1) is hovering Ahri (id=1) for ban
+        let my_ban     = make_action(10, 3, "ban", true, false);
+        let their_ban  = make_action_with_champ(11, 1, "ban", true, false, 1);
+        let member     = make_member(3, "mid", 0);
+        let session    = make_session(3, vec![vec![my_ban, their_ban]], vec![member], Bans::default(), "BAN_PICK");
+        let result     = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        // Should hover Zed (id=2) instead of Ahri
+        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 2, champion_name: "Zed".into() });
+    }
+
+    #[test]
+    fn decide_ban_all_bans_exhausted_when_teammates_cover_every_choice() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        // Both Ahri (id=1) and Zed (id=2) are being hovered by teammates
+        let my_ban    = make_action(10, 3, "ban", true, false);
+        let ban_ahri  = make_action_with_champ(11, 1, "ban", true, false, 1);
+        let ban_zed   = make_action_with_champ(12, 2, "ban", true, false, 2);
+        let member    = make_member(3, "mid", 0);
+        let session   = make_session(3, vec![vec![my_ban, ban_ahri, ban_zed]], vec![member], Bans::default(), "BAN_PICK");
+        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        assert_eq!(result, BanDecision::AllBansExhausted);
+    }
+
+    #[test]
+    fn decide_ban_does_not_skip_own_hover() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        // We (cell 3) are hovering Ahri — should not treat it as a teammate hover
+        let my_ban = make_action_with_champ(10, 3, "ban", true, false, 1);
+        let member = make_member(3, "mid", 0);
+        let session = make_session(3, vec![vec![my_ban]], vec![member], Bans::default(), "BAN_PICK");
+        // hovered_ban = Some(1): we've already hovered Ahri and have plenty of time
+        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, Some(1), 0);
+        // Should wait for timer (20s remain > 5s threshold) — not skip Ahri
+        assert!(matches!(result, BanDecision::WaitForTimer { .. }));
+    }
+
+    #[test]
+    fn decide_ban_ignores_teammate_hover_with_zero_champion_id() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        // Teammate action has champion_id = 0 (not yet picked) — must not be treated as a hover
+        let my_ban    = make_action(10, 3, "ban", true, false);
+        let their_ban = make_action_with_champ(11, 1, "ban", true, false, 0);
+        let member    = make_member(3, "mid", 0);
+        let session   = make_session(3, vec![vec![my_ban, their_ban]], vec![member], Bans::default(), "BAN_PICK");
+        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        // Ahri should still be the first choice since the teammate hasn't hovered anything
+        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
     }
 
     // ── best_pick_target ──────────────────────────────────────────────────────

@@ -289,7 +289,6 @@ pub struct Action {
     pub is_in_progress: bool,
     pub completed: bool,
     #[serde(rename = "championId", default)]
-    #[allow(dead_code)]
     pub champion_id: i64,
 }
 
