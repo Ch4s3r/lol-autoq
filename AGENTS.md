@@ -39,6 +39,14 @@ Endpoints used:
 - `POST /lol-champ-select/v1/session/actions/{id}/complete` — lock in
 - `GET /lol-game-data/assets/v1/champion-summary.json` — champion id/name/alias list
 
+## UI / Icons
+
+- **Always use [Font Awesome Free](https://fontawesome.com/search?m=free) for all icons** — no Unicode symbols, emoji, or other icon sets.
+- Font Awesome is loaded via CDN in `main.rs` via `with_custom_head`. Keep using the same `<link>` tag; do not swap to a local copy unless explicitly asked.
+- Use the solid style (`fa-solid fa-*`) as the default; use regular (`fa-regular fa-*`) or brands (`fa-brands fa-*`) only when solid has no equivalent.
+- Render icons as `<i class="fa-solid fa-{name}"></i>` inside Dioxus `rsx!` with an `i` element and the appropriate `class`.
+- Never embed raw SVG or base64 icon data — always reference a Font Awesome class name.
+
 ## Code Conventions
 
 - `anyhow::Result` with `.context()` on all fallible ops — no `unwrap`/`expect`
