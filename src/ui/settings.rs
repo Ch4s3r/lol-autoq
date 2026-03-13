@@ -49,10 +49,12 @@ pub fn Settings() -> Element {
                 }
             }
 
-            match *active_tab.read() {
-                SettingsTab::Picks  => rsx! { PicksTab { on_save: save_config } },
-                SettingsTab::Bans   => rsx! { BansTab  { on_save: save_config } },
-                SettingsTab::Timers => rsx! { TimersTab { on_save: save_config } },
+            if *active_tab.read() == SettingsTab::Picks {
+                PicksTab { on_save: save_config }
+            } else if *active_tab.read() == SettingsTab::Bans {
+                BansTab { on_save: save_config }
+            } else {
+                TimersTab { on_save: save_config }
             }
 
             // Saved toast

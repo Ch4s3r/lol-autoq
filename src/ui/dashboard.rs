@@ -10,24 +10,26 @@ use super::components::{
 pub fn Dashboard() -> Element {
     let state = use_context::<AppState>();
 
-    let connection = state.connection.read();
+    // Extract values immediately and drop the read guards before building RSX
+    let (chip_class, dot_class, conn_label) = {
+        let conn = state.connection.read();
+        if conn.is_connected() {
+            (
+                "chip chip-connected",
+                "chip-dot chip-dot-connected",
+                conn.label().to_string(),
+            )
+        } else {
+            (
+                "chip chip-searching",
+                "chip-dot chip-dot-searching",
+                conn.label().to_string(),
+            )
+        }
+    };
     let phase = state.phase.read().clone();
     let activities: Vec<_> = state.activities.read().iter().cloned().collect();
     let hovered = state.hovered_champion.read().clone();
-
-    let (chip_class, dot_class, conn_label) = if connection.is_connected() {
-        (
-            "chip chip-connected",
-            "chip-dot chip-dot-connected",
-            connection.label().to_string(),
-        )
-    } else {
-        (
-            "chip chip-searching",
-            "chip-dot chip-dot-searching",
-            connection.label().to_string(),
-        )
-    };
 
     rsx! {
         div { class: "content",

@@ -5,13 +5,7 @@ mod lcu;
 mod ui;
 
 fn main() {
-    let head = format!(
-        "<style>{}</style>\
-         <meta http-equiv='Content-Security-Policy' \
-               content=\"default-src 'self' 'unsafe-inline' data: \
-                         https://ddragon.leagueoflegends.com\">",
-        ui::styles::CSS,
-    );
+    let head = format!("<style>{}</style>", ui::styles::CSS);
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(

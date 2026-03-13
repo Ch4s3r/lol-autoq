@@ -1,0 +1,41 @@
+bans = [
+    "Zed",
+    "Yasuo",
+    "Yone",
+]
+lock_in_ban_secs = 5
+lock_in_pick_secs = 10
+hover_pick_secs = 18446744073709551615
+accept_queue_delay_secs = 18446744073709551615
+timer_jitter_secs = 0
+
+[preferences]
+top = [
+    "Darius",
+    "Garen",
+    "Malphite",
+]
+jungle = [
+    "Vi",
+    "Warwick",
+    "Amumu",
+]
+mid = [
+    "Lux",
+    "Ahri",
+    "Syndra",
+]
+bot = [
+    "Jinx",
+    "Caitlyn",
+    "Jhin",
+]
+support = [
+    "Thresh",
+    "Lulu",
+    "Sona",
+]
+fill = [
+    "Garen",
+    "Lux",
+]

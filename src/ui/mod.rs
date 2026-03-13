@@ -47,9 +47,10 @@ pub fn App() -> Element {
             }
 
             // Page content
-            match *active_tab.read() {
-                Tab::Dashboard => rsx! { Dashboard {} },
-                Tab::Settings  => rsx! { Settings  {} },
+            if *active_tab.read() == Tab::Dashboard {
+                Dashboard {}
+            } else {
+                Settings {}
             }
 
             // Bottom navigation
