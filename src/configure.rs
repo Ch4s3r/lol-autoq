@@ -359,8 +359,9 @@ fn action_move(config: &mut Config, position: &str, delta: i32) -> Result<()> {
 fn edit_timers(config: &mut Config) -> Result<()> {
     println!();
     println!("  Timers");
-    println!("  'Instant' = act right away with no delay or timer check.");
-    println!("  A number = act when that many seconds or fewer remain / delay by that many seconds.");
+    println!("  Ban, pick, and hover timers act when that many seconds or fewer remain on the phase timer.");
+    println!("  Queue accept is a delay — it waits that many seconds after the queue pop before accepting.");
+    println!("  Instant = always trigger immediately.");
     println!();
     println!(
         "  Current:  ban {} / pick {} / hover {} / queue accept {}",
@@ -371,26 +372,28 @@ fn edit_timers(config: &mut Config) -> Result<()> {
     );
     println!();
 
-    config.lock_in_ban_secs        = prompt_threshold("Ban lock-in",        config.lock_in_ban_secs)?;
-    config.lock_in_pick_secs       = prompt_threshold("Pick lock-in",       config.lock_in_pick_secs)?;
-    config.hover_pick_secs         = prompt_threshold("Pick hover",         config.hover_pick_secs)?;
-    config.accept_queue_delay_secs = prompt_threshold("Queue accept delay", config.accept_queue_delay_secs)?;
+    config.lock_in_ban_secs        = prompt_threshold("Ban lock-in  (seconds remaining)",  config.lock_in_ban_secs)?;
+    config.lock_in_pick_secs       = prompt_threshold("Pick lock-in  (seconds remaining)", config.lock_in_pick_secs)?;
+    config.hover_pick_secs         = prompt_threshold("Pick hover  (seconds remaining)",   config.hover_pick_secs)?;
+    config.accept_queue_delay_secs = prompt_threshold("Queue accept delay  (seconds)",     config.accept_queue_delay_secs)?;
     Ok(())
 }
 
 const TIMER_INSTANT: &str  = "Instant";
-const TIMER_CUSTOM: &str   = "Custom (enter seconds)";
+const TIMER_LAST_MOMENT: &str = "Last moment";
+const TIMER_CUSTOM: &str   = "Custom";
 
 fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
     let current_str = format_threshold(current);
     let options = vec![
         TIMER_INSTANT.to_string(),
-        "0  (last possible moment)".to_string(),
-        "3s".to_string(),
-        "5s".to_string(),
-        "10s".to_string(),
-        "15s".to_string(),
+        "25s".to_string(),
         "20s".to_string(),
+        "10s".to_string(),
+        "5s".to_string(),
+        "3s".to_string(),
+        "1s".to_string(),
+        TIMER_LAST_MOMENT.to_string(),
         TIMER_CUSTOM.to_string(),
     ];
 
@@ -411,8 +414,8 @@ fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
         return Ok(INSTANT);
     }
 
-    if selection.starts_with('0') {
-        println!("  {label} set to 0s.");
+    if selection == TIMER_LAST_MOMENT {
+        println!("  {label} set to Last moment (0s).");
         return Ok(0);
     }
 

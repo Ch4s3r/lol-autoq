@@ -90,6 +90,20 @@ What would you like to do?
 
 The first champion in the list that is not banned or already picked will be chosen.
 
+#### Timer thresholds
+
+You can also configure when actions fire via the **Timers** menu:
+
+| Timer | Meaning |
+|---|---|
+| Ban lock-in | Lock in your ban when this many seconds or fewer remain on the phase timer |
+| Pick lock-in | Lock in your pick when this many seconds or fewer remain on the phase timer |
+| Pick hover | Hover your champion when this many seconds or fewer remain on the phase timer |
+| Queue accept delay | Wait this many seconds after a queue pop before accepting |
+
+**Instant** means act immediately with no timer check (default for hover and queue accept).  
+**Last moment** means wait until the very last second (0 s remaining).
+
 ---
 
 ### 3. Start the auto-queue
