@@ -27,7 +27,7 @@ pub fn ChampionTile(
             span { class: "champ-tile-name", "{name}" }
 
             if selected {
-                div { class: "tile-check", "✓" }
+                div { class: "tile-check", i { class: "fa-solid fa-check" } }
             }
         }
     }

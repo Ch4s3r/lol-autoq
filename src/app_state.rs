@@ -101,14 +101,14 @@ impl GamePhase {
 
     pub fn icon(&self) -> &str {
         match self {
-            Self::None | Self::Lobby => "⚔",
-            Self::Matchmaking => "⌛",
-            Self::ReadyCheck => "✓",
-            Self::ChampSelect => "★",
-            Self::GameStart => "▶",
-            Self::InProgress => "▮▮",
-            Self::EndOfGame => "⬛",
-            Self::Unknown(_) => "?",
+            Self::None | Self::Lobby => "fa-solid fa-shield",
+            Self::Matchmaking => "fa-solid fa-hourglass-half",
+            Self::ReadyCheck => "fa-solid fa-bell",
+            Self::ChampSelect => "fa-solid fa-wand-magic-sparkles",
+            Self::GameStart => "fa-solid fa-play",
+            Self::InProgress => "fa-solid fa-gamepad",
+            Self::EndOfGame => "fa-solid fa-flag-checkered",
+            Self::Unknown(_) => "fa-solid fa-circle-question",
         }
     }
 }

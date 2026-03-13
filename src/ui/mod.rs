@@ -51,13 +51,13 @@ pub fn App() -> Element {
                 button {
                     class: if *active_tab.read() == Tab::Dashboard { "nav-btn active" } else { "nav-btn" },
                     onclick: move |_| active_tab.set(Tab::Dashboard),
-                    span { class: "nav-btn-icon", "⊞" }
+                    span { class: "nav-btn-icon", i { class: "fa-solid fa-table-cells-large" } }
                     span { "Dashboard" }
                 }
                 button {
                     class: if *active_tab.read() == Tab::Settings { "nav-btn active" } else { "nav-btn" },
                     onclick: move |_| active_tab.set(Tab::Settings),
-                    span { class: "nav-btn-icon", "⚙" }
+                    span { class: "nav-btn-icon", i { class: "fa-solid fa-gear" } }
                     span { "Settings" }
                 }
             }

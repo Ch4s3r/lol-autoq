@@ -151,7 +151,7 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                                                 on_save.call(());
                                             }
                                         },
-                                        "↑"
+                                        i { class: "fa-solid fa-chevron-up" }
                                     }
                                 }
                                 if i + 1 < bans.len() {
@@ -167,7 +167,7 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                                                 on_save.call(());
                                             }
                                         },
-                                        "↓"
+                                        i { class: "fa-solid fa-chevron-down" }
                                     }
                                 }
                                 button {
@@ -180,7 +180,7 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                                             on_save.call(());
                                         }
                                     },
-                                    "×"
+                                    i { class: "fa-solid fa-xmark" }
                                 }
                             }
                         }
@@ -190,7 +190,8 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
                 button {
                     class: "add-champ-btn",
                     onclick: move |_| show_picker.set(true),
-                    "+ Add ban"
+                    i { class: "fa-solid fa-plus" }
+                    " Add ban"
                 }
             }
 

@@ -13,7 +13,7 @@ pub fn PhaseCard(phase: GamePhase, hovered_champion: Option<String>) -> Element 
         div {
             class: "phase-card {css_class}",
 
-            span { class: "phase-icon", "{icon}" }
+            span { class: "phase-icon", i { class: "{icon}" } }
             h2 { class: "phase-title", "{title}" }
             p { class: "phase-desc",   "{desc}" }
 

@@ -37,7 +37,7 @@ pub fn LaneCard(
                                             on_update.call(champs.clone());
                                         }
                                     },
-                                    "↑"
+                                    i { class: "fa-solid fa-chevron-up" }
                                 }
                             }
                             // Move down
@@ -53,7 +53,7 @@ pub fn LaneCard(
                                             on_update.call(champs.clone());
                                         }
                                     },
-                                    "↓"
+                                    i { class: "fa-solid fa-chevron-down" }
                                 }
                             }
                             // Remove
@@ -68,7 +68,7 @@ pub fn LaneCard(
                                         on_update.call(champs.clone());
                                     }
                                 },
-                                "×"
+                                i { class: "fa-solid fa-xmark" }
                             }
                         }
                     }
@@ -78,7 +78,8 @@ pub fn LaneCard(
             button {
                 class: "add-champ-btn",
                 onclick: move |_| show_picker.set(true),
-                "+ Add champion"
+                i { class: "fa-solid fa-plus" }
+                " Add champion"
             }
 
             if *show_picker.read() {

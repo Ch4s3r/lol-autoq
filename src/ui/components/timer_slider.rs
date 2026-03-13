@@ -51,7 +51,8 @@ pub fn TimerSlider(
                             }
                         },
                     }
-                    span { "⚡ Instant" }
+                    i { class: "fa-solid fa-bolt" }
+                    span { " Instant" }
                 }
             }
         }
