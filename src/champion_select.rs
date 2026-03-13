@@ -6,6 +6,12 @@ use tracing::{info, trace, warn};
 use crate::config::{Config, INSTANT};
 use crate::lcu::{Action, ChampSelectSession, ChampionSummary, LcuClient};
 
+/// Compute the effective lock-in threshold in seconds after applying jitter.
+/// If jitter >= configured, the threshold clamps to 0 (act at the last moment).
+pub(crate) fn effective_threshold(configured_secs: u64, jitter_secs: u64) -> f64 {
+    (configured_secs as i64 - jitter_secs as i64).max(0) as f64
+}
+
 /// Returns:
 /// - `lookup`  : lowercase name/alias → champion id  (for resolving config preferences)
 /// - `display` : champion id → proper display name    (for human-readable log messages)
@@ -137,7 +143,7 @@ pub async fn handle_ban_phase(
     // Lock in when the timer drops to the threshold (INSTANT skips the check).
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
     if config.lock_in_ban_secs != INSTANT {
-        let threshold = (config.lock_in_ban_secs as i64 - lock_in_jitter as i64).max(0) as f64;
+        let threshold = effective_threshold(config.lock_in_ban_secs, lock_in_jitter);
         if remaining_secs > threshold {
             trace!(
                 remaining = format!("{remaining_secs:.1}s"),
@@ -287,7 +293,7 @@ pub async fn handle_champion_select(
     if *hovered_pick != Some((action.id, chosen_id)) {
         let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
         if config.hover_pick_secs != INSTANT {
-            let threshold = (config.hover_pick_secs as i64 - hover_jitter as i64).max(0) as f64;
+            let threshold = effective_threshold(config.hover_pick_secs, hover_jitter);
             if remaining_secs > threshold {
                 trace!(
                     remaining = format!("{remaining_secs:.1}s"),
@@ -317,7 +323,7 @@ pub async fn handle_champion_select(
     // Lock in when the timer drops to the threshold (INSTANT skips the check).
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
     if config.lock_in_pick_secs != INSTANT {
-        let threshold = (config.lock_in_pick_secs as i64 - pick_jitter as i64).max(0) as f64;
+        let threshold = effective_threshold(config.lock_in_pick_secs, pick_jitter);
         if remaining_secs > threshold {
             trace!(
                 remaining = format!("{remaining_secs:.1}s"),
@@ -347,4 +353,34 @@ pub async fn handle_champion_select(
     client.lock_champion(action.id, chosen_id).await?;
     info!(champion = %chosen_name, "Lock-in complete!");
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_threshold;
+
+    #[test]
+    fn no_jitter_keeps_threshold() {
+        assert_eq!(effective_threshold(10, 0), 10.0);
+    }
+
+    #[test]
+    fn jitter_reduces_threshold() {
+        assert_eq!(effective_threshold(10, 3), 7.0);
+    }
+
+    #[test]
+    fn jitter_equals_threshold_clamps_to_zero() {
+        assert_eq!(effective_threshold(5, 5), 0.0);
+    }
+
+    #[test]
+    fn jitter_exceeds_threshold_clamps_to_zero() {
+        assert_eq!(effective_threshold(5, 8), 0.0);
+    }
+
+    #[test]
+    fn large_jitter_on_zero_threshold_stays_zero() {
+        assert_eq!(effective_threshold(0, 999), 0.0);
+    }
 }
