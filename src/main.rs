@@ -21,6 +21,7 @@ fn main() {
         .with_cfg(
             dioxus::desktop::Config::new()
                 .with_custom_head(head)
+                .with_menu(None)
                 .with_window(
                     dioxus::desktop::WindowBuilder::new()
                         .with_title("LoL Auto-Queue")
