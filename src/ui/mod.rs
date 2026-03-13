@@ -39,13 +39,6 @@ pub fn App() -> Element {
 
     rsx! {
         div { class: "app",
-            // Top bar
-            div { class: "top-bar",
-                span { class: "top-bar-icon", "⚔" }
-                span { class: "top-bar-title", "LoL Auto-Queue" }
-                span { class: "top-bar-version", "v{env!(\"CARGO_PKG_VERSION\")}" }
-            }
-
             // Page content
             if *active_tab.read() == Tab::Dashboard {
                 Dashboard {}
