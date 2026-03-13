@@ -36,7 +36,7 @@ fn main() {
                 .with_menu(None)
                 .with_window(
                     dioxus::desktop::WindowBuilder::new()
-                        .with_title("LoL Auto-Queue")
+                        .with_title("LoL AutoQ")
                         .with_inner_size(dioxus::desktop::tao::dpi::LogicalSize::new(
                             440.0_f64, 720.0_f64,
                         ))

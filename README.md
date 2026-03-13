@@ -1,4 +1,8 @@
-# lol-autoq
+# LoL AutoQ
+
+<p align="center">
+  <img src="banner.svg" alt="LoL AutoQ Banner" width="600" />
+</p>
 
 Automatically accepts ready checks and picks your preferred champion in champion select for League of Legends on **Windows**.
 
@@ -223,7 +227,7 @@ You can also configure when actions fire via the **Timers** menu:
 
 ---
 
-### 3. Start the auto-queue
+### 3. Start LoL AutoQ
 
 ```
 lol-autoq start
@@ -236,7 +240,7 @@ Example output:
 
 ```
   =================================
-   LoL Auto-Queue  v0.1.0
+   LoL AutoQ  v0.1.0
    Auto-accept queues & pick champs
   =================================
 

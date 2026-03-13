@@ -5,7 +5,7 @@
 ```sh
 cargo build                          # debug build
 cargo build --release                # release build (binary at target/release/lol-autoq)
-cargo run -- start                   # run the auto-queue loop
+cargo run -- start                   # run the LoL AutoQ loop
 cargo run -- configure               # interactive champion/ban/timer config TUI
 RUST_LOG=trace cargo run -- start    # verbose logging (every HTTP call + decisions)
 ```
