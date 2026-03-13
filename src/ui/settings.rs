@@ -230,6 +230,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
     let hover     = state.config.read().hover_pick_secs;
     let queue     = state.config.read().accept_queue_delay_secs;
     let jitter    = state.config.read().timer_jitter_secs;
+    let log_level = state.config.read().log_level.clone();
 
     // Non-INSTANT values must fit in 0-30s for the slider
     const MAX_SECS: u64 = 30;
@@ -308,6 +309,33 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                             }
                         }
                     },
+                }
+            }
+
+            // Log level selector
+            div { class: "timer-card",
+                div { class: "timer-label", "Log level" }
+                div { class: "timer-sublabel", "Detail shown in the activity log and saved to lol-autoq.log" }
+                select {
+                    class: "log-level-select",
+                    value: "{log_level}",
+                    onchange: {
+                        let on_save = on_save;
+                        move |e: Event<FormData>| {
+                            let v = e.value();
+                            crate::logger::set_level(&v);
+                            state.config.write().log_level = v;
+                            on_save.call(());
+                        }
+                    },
+                    for level in ["error", "warn", "info", "debug", "trace"] {
+                        option {
+                            key: "{level}",
+                            value: "{level}",
+                            selected: log_level.as_str() == level,
+                            "{level}"
+                        }
+                    }
                 }
             }
         }

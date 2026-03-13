@@ -352,6 +352,21 @@ html, body, #main {
   margin: 8px 0 4px;
 }
 .timer-value.instant { color: var(--success); }
+
+/* ── Log level selector ─────────────────────────────────────────────── */
+.log-level-select {
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--outline);
+  background: var(--surf-var);
+  color: var(--on-surface);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  appearance: auto;
+}
 input[type=range] {
   -webkit-appearance: none;
   appearance: none;

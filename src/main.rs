@@ -2,14 +2,26 @@ mod app_state;
 mod champion_select;
 mod config;
 mod lcu;
+mod logger;
 mod ui;
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
+    // Load config to get the persisted log level before setting up the subscriber.
+    let initial_log_level = config::Config::load_or_create()
+        .map(|c| c.log_level)
+        .unwrap_or_else(|_| "info".to_string());
+
+    // Open the log file in append mode and write a session separator.
+    logger::init(&initial_log_level);
+
+    // Tracing subscriber: fmt layer for stdout (respects RUST_LOG) +
+    // our layer that writes to lol-autoq.log and the UI activity buffer.
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_filter(env_filter))
+        .with(logger::UiFileLayer)
         .init();
 
     let head = format!(

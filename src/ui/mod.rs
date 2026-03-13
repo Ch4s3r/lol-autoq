@@ -161,6 +161,9 @@ async fn inner_poll_loop(
     let mut queue_jitter: u64 = 0;
 
     loop {
+        // Drain tracing events into the UI activity log (keeps file and UI in sync).
+        state.drain_log_buffer();
+
         let phase = client.get_gameflow_phase().await?;
 
         if phase != last_phase {

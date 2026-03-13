@@ -43,6 +43,10 @@ pub struct Config {
     /// 0 = deterministic (no jitter).
     #[serde(default)]
     pub timer_jitter_secs: u64,
+    /// Minimum log level written to the activity log and `lol-autoq.log`.
+    /// Valid values: "error", "warn", "info", "debug", "trace". Default: "info".
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
     pub preferences: LanePreferences,
 }
 
@@ -60,6 +64,10 @@ fn default_hover_pick_secs() -> u64 {
 
 fn default_accept_queue_delay_secs() -> u64 {
     INSTANT
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 /// Champion preferences per lane. Listed in priority order (first = most preferred).
@@ -85,6 +93,7 @@ impl Default for Config {
             hover_pick_secs: default_hover_pick_secs(),
             accept_queue_delay_secs: default_accept_queue_delay_secs(),
             timer_jitter_secs: 0,
+            log_level: default_log_level(),
             preferences: LanePreferences {
                 top: vec!["Darius".into(), "Garen".into(), "Malphite".into()],
                 jungle: vec!["Vi".into(), "Warwick".into(), "Amumu".into()],

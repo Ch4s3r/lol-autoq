@@ -177,16 +177,37 @@ impl AppState {
     }
 
     pub fn push_activity(self, msg: impl Into<String>, kind: ActivityKind) {
-        let entry = ActivityEntry {
-            timestamp: Local::now().format("%H:%M:%S").to_string(),
-            message: msg.into(),
-            kind,
-        };
+        let msg = msg.into();
+        let timestamp = Local::now().format("%H:%M:%S").to_string();
+        crate::logger::write_activity(&timestamp, &msg, &kind);
+        let entry = ActivityEntry { timestamp, message: msg, kind };
         let mut activities = self.activities;
         let mut log = activities.write();
         log.push_front(entry);
-        if log.len() > 25 {
+        if log.len() > 100 {
             log.pop_back();
+        }
+    }
+
+    /// Drain tracing events from the shared logger buffer into the UI activity
+    /// log. Called once per poll cycle so the activity log and log file stay
+    /// identical.
+    pub fn drain_log_buffer(self) {
+        let buffer = crate::logger::log_buffer();
+        let Ok(mut buf) = buffer.lock() else { return };
+        if buf.is_empty() {
+            return;
+        }
+        // Buffer is newest-first; reverse so we push_front in oldest→newest order.
+        let entries: Vec<ActivityEntry> = buf.drain(..).collect();
+        drop(buf);
+        let mut activities = self.activities;
+        let mut log = activities.write();
+        for entry in entries.into_iter().rev() {
+            log.push_front(entry);
+            if log.len() > 100 {
+                log.pop_back();
+            }
         }
     }
 }
