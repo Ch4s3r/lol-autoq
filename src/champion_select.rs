@@ -88,6 +88,7 @@ pub async fn handle_ban_phase(
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
     hovered_ban: &mut Option<i64>,
+    lock_in_jitter: u64,
 ) -> Result<bool> {
     let action = match find_active_ban_action(session) {
         Some(a) => a,
@@ -136,7 +137,7 @@ pub async fn handle_ban_phase(
     // Lock in when the timer drops to the threshold (INSTANT skips the check).
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
     if config.lock_in_ban_secs != INSTANT {
-        let threshold = config.lock_in_ban_secs as f64;
+        let threshold = (config.lock_in_ban_secs as i64 - lock_in_jitter as i64).max(0) as f64;
         if remaining_secs > threshold {
             trace!(
                 remaining = format!("{remaining_secs:.1}s"),
@@ -246,6 +247,8 @@ pub async fn handle_champion_select(
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
     hovered_pick: &mut Option<(i64, i64)>,
+    hover_jitter: u64,
+    pick_jitter: u64,
 ) -> Result<bool> {
     // Use the any-state action for hovering; need in-progress for lock-in.
     let action = match find_pick_action(session) {
@@ -284,7 +287,7 @@ pub async fn handle_champion_select(
     if *hovered_pick != Some((action.id, chosen_id)) {
         let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
         if config.hover_pick_secs != INSTANT {
-            let threshold = config.hover_pick_secs as f64;
+            let threshold = (config.hover_pick_secs as i64 - hover_jitter as i64).max(0) as f64;
             if remaining_secs > threshold {
                 trace!(
                     remaining = format!("{remaining_secs:.1}s"),
@@ -314,7 +317,7 @@ pub async fn handle_champion_select(
     // Lock in when the timer drops to the threshold (INSTANT skips the check).
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
     if config.lock_in_pick_secs != INSTANT {
-        let threshold = config.lock_in_pick_secs as f64;
+        let threshold = (config.lock_in_pick_secs as i64 - pick_jitter as i64).max(0) as f64;
         if remaining_secs > threshold {
             trace!(
                 remaining = format!("{remaining_secs:.1}s"),

@@ -5,7 +5,7 @@ mod configure;
 mod lcu;
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Parser as _;
@@ -16,6 +16,15 @@ use champion_select::{build_champion_map, handle_ban_phase, handle_champion_sele
 use cli::{Cli, Command};
 use config::{format_lock_in, Config, INSTANT};
 use lcu::{LcuClient, LockfileData};
+
+/// Roll a uniformly random value in `0..=max_secs`. Returns 0 when max_secs is 0.
+fn roll_jitter(max_secs: u64) -> u64 {
+    if max_secs == 0 {
+        return 0;
+    }
+    use rand::Rng;
+    rand::thread_rng().gen_range(0..=max_secs)
+}
 
 /// How long to wait between polls when the client is not running.
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
@@ -115,6 +124,7 @@ async fn main() -> Result<()> {
             info!("  Pick lock-in:  {}", format_lock_in(config.lock_in_pick_secs));
             info!("  Pick hover:    {}", format_lock_in(config.hover_pick_secs));
             info!("  Queue accept:  {}", format_lock_in(config.accept_queue_delay_secs));
+            info!("  Jitter:        {}", if config.timer_jitter_secs == 0 { "Off".to_string() } else { format!("0–{}s", config.timer_jitter_secs) });
             info!("");
             info!("Waiting for the League of Legends client to start...");
 
@@ -198,11 +208,17 @@ async fn poll_loop(
 ) -> Result<()> {
     let mut last_phase = String::new();
     let mut ready_check_accepted = false;
+    let mut ready_check_seen_at: Option<Instant> = None;
     let mut ban_completed = false;
     let mut champ_locked = false;
     let mut hovered_ban: Option<i64> = None;
     // (action_id, champion_id) — if either changes, hover is re-sent.
     let mut hovered_pick: Option<(i64, i64)> = None;
+    // Per-phase jitter values, re-rolled on every phase transition.
+    let mut ban_jitter: u64 = 0;
+    let mut hover_jitter: u64 = 0;
+    let mut pick_jitter: u64 = 0;
+    let mut queue_jitter: u64 = 0;
 
     loop {
         let phase = client.get_gameflow_phase().await?;
@@ -212,27 +228,51 @@ async fn poll_loop(
             last_phase = phase.clone();
             // Reset per-phase state when we transition.
             ready_check_accepted = false;
+            ready_check_seen_at = None;
             ban_completed = false;
             champ_locked = false;
             hovered_ban = None;
             hovered_pick = None;
+            ban_jitter   = roll_jitter(config.timer_jitter_secs);
+            hover_jitter = roll_jitter(config.timer_jitter_secs);
+            pick_jitter  = roll_jitter(config.timer_jitter_secs);
+            queue_jitter = roll_jitter(config.timer_jitter_secs);
+            if config.timer_jitter_secs > 0 {
+                tracing::trace!(
+                    ban_jitter, hover_jitter, pick_jitter, queue_jitter,
+                    "jitter rolled for this phase"
+                );
+            }
         }
 
         match phase.as_str() {
             "ReadyCheck" => {
                 if !ready_check_accepted {
-                    if config.accept_queue_delay_secs != INSTANT && config.accept_queue_delay_secs > 0 {
-                        info!(delay = config.accept_queue_delay_secs, "Ready check detected — accepting in {}s...", config.accept_queue_delay_secs);
-                        sleep(Duration::from_secs(config.accept_queue_delay_secs)).await;
+                    let effective_delay = if config.accept_queue_delay_secs == INSTANT {
+                        queue_jitter
                     } else {
-                        info!("Ready check detected — accepting...");
-                    }
-                    match client.accept_ready_check().await {
-                        Ok(()) => {
-                            info!("Queue accepted!");
-                            ready_check_accepted = true;
+                        config.accept_queue_delay_secs.saturating_add(queue_jitter)
+                    };
+
+                    let seen_at = ready_check_seen_at.get_or_insert_with(|| {
+                        if effective_delay > 0 {
+                            info!(delay = effective_delay, "Ready check detected — accepting in {effective_delay}s...");
+                        } else {
+                            info!("Ready check detected — accepting...");
                         }
-                        Err(e) => warn!(error = %e, "Could not accept queue"),
+                        Instant::now()
+                    });
+
+                    if seen_at.elapsed() < Duration::from_secs(effective_delay) {
+                        // Still waiting — the poll loop will retry in 100 ms.
+                    } else {
+                        match client.accept_ready_check().await {
+                            Ok(()) => {
+                                info!("Queue accepted!");
+                                ready_check_accepted = true;
+                            }
+                            Err(e) => warn!(error = %e, "Could not accept queue"),
+                        }
                     }
                 }
             }
@@ -258,6 +298,8 @@ async fn poll_loop(
                             champion_map,
                             display_names,
                             &mut hovered_pick,
+                            hover_jitter,
+                            pick_jitter,
                         )
                         .await
                         {
@@ -278,6 +320,7 @@ async fn poll_loop(
                             champion_map,
                             display_names,
                             &mut hovered_ban,
+                            ban_jitter,
                         )
                         .await
                         {

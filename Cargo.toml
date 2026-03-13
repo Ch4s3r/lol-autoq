@@ -16,3 +16,4 @@ base64 = "0.22"
 nom = "8"
 clap = { version = "4", features = ["derive"] }
 inquire = "0.9"
+rand = "0.8"

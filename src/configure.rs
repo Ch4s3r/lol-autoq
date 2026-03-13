@@ -14,6 +14,14 @@ fn format_threshold(secs: u64) -> String {
     }
 }
 
+fn format_jitter(secs: u64) -> String {
+    if secs == 0 {
+        "Off".to_string()
+    } else {
+        format!("0–{secs}s")
+    }
+}
+
 /// Entry point for the configure subcommand.
 pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<()> {
     println!();
@@ -32,11 +40,12 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
                 if config.bans.is_empty() { "(none configured)".to_string() } else { config.bans.join(" → ") }
             ),
             format!(
-                "Timers          ban {} / pick {} / hover {} / queue {}",
+                "Timers          ban {} / pick {} / hover {} / queue {} / jitter {}",
                 format_threshold(config.lock_in_ban_secs),
                 format_threshold(config.lock_in_pick_secs),
                 format_threshold(config.hover_pick_secs),
                 format_threshold(config.accept_queue_delay_secs),
+                format_jitter(config.timer_jitter_secs),
             ),
             SAVE_EXIT.to_string(),
         ];
@@ -359,9 +368,10 @@ fn action_move(config: &mut Config, position: &str, delta: i32) -> Result<()> {
 fn edit_timers(config: &mut Config) -> Result<()> {
     println!();
     println!("  Timers");
-    println!("  Ban, pick, and hover timers act when that many seconds or fewer remain on the phase timer.");
-    println!("  Queue accept is a delay — it waits that many seconds after the queue pop before accepting.");
-    println!("  Instant = always trigger immediately.");
+    println!("  Ban, pick, hover: act when that many seconds or fewer REMAIN on the phase timer.");
+    println!("  Queue accept: literal delay — the tool sleeps this many seconds before accepting.");
+    println!("  (The ready-check popup expires in ~12 s, so keep the queue delay well below that.)");
+    println!("  Instant = act immediately with no delay or threshold check.");
     println!();
     println!(
         "  Current:  ban {} / pick {} / hover {} / queue accept {}",
@@ -375,7 +385,8 @@ fn edit_timers(config: &mut Config) -> Result<()> {
     config.lock_in_ban_secs        = prompt_threshold("Ban lock-in  (seconds remaining)",  config.lock_in_ban_secs)?;
     config.lock_in_pick_secs       = prompt_threshold("Pick lock-in  (seconds remaining)", config.lock_in_pick_secs)?;
     config.hover_pick_secs         = prompt_threshold("Pick hover  (seconds remaining)",   config.hover_pick_secs)?;
-    config.accept_queue_delay_secs = prompt_threshold("Queue accept delay  (seconds)",     config.accept_queue_delay_secs)?;
+    config.accept_queue_delay_secs = prompt_queue_delay(config.accept_queue_delay_secs)?;
+    config.timer_jitter_secs       = prompt_jitter(config.timer_jitter_secs)?;
     Ok(())
 }
 
@@ -442,6 +453,120 @@ fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
     match input.trim().parse::<u64>() {
         Ok(secs) => {
             println!("  {label} set to ≤ {secs}s.");
+            Ok(secs)
+        }
+        Err(_) => {
+            println!("  Invalid number — keeping current value ({current_str}).");
+            Ok(current)
+        }
+    }
+}
+
+/// Separate prompt for the queue accept delay.
+/// Uses small values only — the
+/// ready-check popup expires in ~12 s, so anything larger would always miss it.
+fn prompt_queue_delay(current: u64) -> Result<u64> {
+    let current_str = format_threshold(current);
+    const OPTIONS: &[&str] = &["Instant", "1s", "2s", "3s", "5s", "8s", "Custom"];
+
+    let selection = match Select::new(
+        &format!("Queue accept delay  (seconds to wait before accepting — current: {current_str}):"),
+        OPTIONS.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+    )
+    .prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+            println!("  Keeping current value ({current_str}).");
+            return Ok(current);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    if selection == "Instant" {
+        println!("  Queue accept delay set to Instant.");
+        return Ok(INSTANT);
+    }
+
+    if selection != "Custom" {
+        if let Ok(secs) = selection.trim_end_matches('s').parse::<u64>() {
+            println!("  Queue accept delay set to {secs}s.");
+            return Ok(secs);
+        }
+    }
+
+    let default = if current == INSTANT { "0".to_string() } else { current.to_string() };
+    let input = match Text::new("Enter seconds (ready check expires in ~12 s):")
+        .with_default(&default)
+        .prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+            println!("  Keeping current value ({current_str}).");
+            return Ok(current);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    match input.trim().parse::<u64>() {
+        Ok(secs) => {
+            println!("  Queue accept delay set to {secs}s.");
+            Ok(secs)
+        }
+        Err(_) => {
+            println!("  Invalid number — keeping current value ({current_str}).");
+            Ok(current)
+        }
+    }
+}
+
+/// Prompt for the global timer jitter. Off (0) = deterministic.
+fn prompt_jitter(current: u64) -> Result<u64> {
+    let current_str = format_jitter(current);
+    const OPTIONS: &[&str] = &["Off", "1s", "2s", "3s", "5s", "Custom"];
+
+    let selection = match Select::new(
+        &format!("Timer jitter — random extra seconds added to each action  (current: {current_str}):"),
+        OPTIONS.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+    )
+    .prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+            println!("  Keeping current value ({current_str}).");
+            return Ok(current);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    if selection == "Off" {
+        println!("  Jitter set to Off.");
+        return Ok(0);
+    }
+
+    if selection != "Custom" {
+        if let Ok(secs) = selection.trim_end_matches('s').parse::<u64>() {
+            println!("  Jitter set to 0–{secs}s.");
+            return Ok(secs);
+        }
+    }
+
+    let default = if current == 0 { "2".to_string() } else { current.to_string() };
+    let input = match Text::new("Enter max jitter seconds:")
+        .with_default(&default)
+        .prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
+            println!("  Keeping current value ({current_str}).");
+            return Ok(current);
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    match input.trim().parse::<u64>() {
+        Ok(secs) => {
+            println!("  Jitter set to 0–{secs}s.");
             Ok(secs)
         }
         Err(_) => {
