@@ -5,15 +5,15 @@ use std::path::PathBuf;
 
 const CONFIG_FILE: &str = "config.toml";
 
-/// Sentinel value for `lock_in_*_secs` meaning "lock in as soon as hovered".
+/// Sentinel value meaning "act immediately" (no timer check / no delay).
 pub const INSTANT: u64 = u64::MAX;
 
-/// Human-readable representation of a lock-in threshold.
+/// Human-readable representation of a timer threshold or delay.
 pub fn format_lock_in(secs: u64) -> String {
     if secs == INSTANT {
         "Instant".to_string()
     } else {
-        format!("≤ {secs}s remaining")
+        format!("≤ {secs}s")
     }
 }
 
@@ -30,6 +30,13 @@ pub struct Config {
     /// Lock in the champion pick when the timer has this many seconds or fewer remaining.
     #[serde(default = "default_lock_in_pick_secs")]
     pub lock_in_pick_secs: u64,
+    /// Hover the pick champion when the timer has this many seconds or fewer remaining.
+    /// INSTANT = hover as soon as the phase starts (default behaviour).
+    #[serde(default = "default_hover_pick_secs")]
+    pub hover_pick_secs: u64,
+    /// Seconds to wait after a queue pop before accepting. INSTANT = accept immediately.
+    #[serde(default = "default_accept_queue_delay_secs")]
+    pub accept_queue_delay_secs: u64,
     pub preferences: LanePreferences,
 }
 
@@ -39,6 +46,14 @@ fn default_lock_in_ban_secs() -> u64 {
 
 fn default_lock_in_pick_secs() -> u64 {
     10
+}
+
+fn default_hover_pick_secs() -> u64 {
+    INSTANT
+}
+
+fn default_accept_queue_delay_secs() -> u64 {
+    INSTANT
 }
 
 /// Champion preferences per lane. Listed in priority order (first = most preferred).
@@ -61,6 +76,8 @@ impl Default for Config {
             bans: vec!["Zed".into(), "Yasuo".into(), "Yone".into()],
             lock_in_ban_secs: default_lock_in_ban_secs(),
             lock_in_pick_secs: default_lock_in_pick_secs(),
+            hover_pick_secs: default_hover_pick_secs(),
+            accept_queue_delay_secs: default_accept_queue_delay_secs(),
             preferences: LanePreferences {
                 top: vec!["Darius".into(), "Garen".into(), "Malphite".into()],
                 jungle: vec!["Vi".into(), "Warwick".into(), "Amumu".into()],

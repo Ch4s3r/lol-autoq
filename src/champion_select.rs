@@ -279,9 +279,22 @@ pub async fn handle_champion_select(
         }
     };
 
-    // Hover immediately, even before it's our turn.
+    // Hover when ready (immediately by default; delayed if hover_pick_secs is set).
     // Re-hover if the action ID or champion changed (e.g. intent → pick phase transition).
     if *hovered_pick != Some((action.id, chosen_id)) {
+        let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+        if config.hover_pick_secs != INSTANT {
+            let threshold = config.hover_pick_secs as f64;
+            if remaining_secs > threshold {
+                trace!(
+                    remaining = format!("{remaining_secs:.1}s"),
+                    threshold = format!("{threshold:.0}s"),
+                    champion = %chosen_name,
+                    "waiting to hover champion"
+                );
+                return Ok(false);
+            }
+        }
         info!(
             position = %position_label,
             champion = %chosen_name,

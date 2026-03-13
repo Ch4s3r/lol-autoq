@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 
 use champion_select::{build_champion_map, handle_ban_phase, handle_champion_select};
 use cli::{Cli, Command};
-use config::{format_lock_in, Config};
+use config::{format_lock_in, Config, INSTANT};
 use lcu::{LcuClient, LockfileData};
 
 /// How long to wait between polls when the client is not running.
@@ -110,9 +110,11 @@ async fn main() -> Result<()> {
             info!("  Fill:    {}", config.preferences.fill.join(" -> "));
             info!("  Bans:    {}", config.bans.join(" -> "));
             info!("");
-            info!("Lock-in timers:");
-            info!("  Ban lock-in:  {}", format_lock_in(config.lock_in_ban_secs));
-            info!("  Pick lock-in: {}", format_lock_in(config.lock_in_pick_secs));
+            info!("Timers:");
+            info!("  Ban lock-in:   {}", format_lock_in(config.lock_in_ban_secs));
+            info!("  Pick lock-in:  {}", format_lock_in(config.lock_in_pick_secs));
+            info!("  Pick hover:    {}", format_lock_in(config.hover_pick_secs));
+            info!("  Queue accept:  {}", format_lock_in(config.accept_queue_delay_secs));
             info!("");
             info!("Waiting for the League of Legends client to start...");
 
@@ -219,7 +221,12 @@ async fn poll_loop(
         match phase.as_str() {
             "ReadyCheck" => {
                 if !ready_check_accepted {
-                    info!("Ready check detected — accepting...");
+                    if config.accept_queue_delay_secs != INSTANT && config.accept_queue_delay_secs > 0 {
+                        info!(delay = config.accept_queue_delay_secs, "Ready check detected — accepting in {}s...", config.accept_queue_delay_secs);
+                        sleep(Duration::from_secs(config.accept_queue_delay_secs)).await;
+                    } else {
+                        info!("Ready check detected — accepting...");
+                    }
                     match client.accept_ready_check().await {
                         Ok(()) => {
                             info!("Queue accepted!");

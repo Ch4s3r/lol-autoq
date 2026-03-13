@@ -32,9 +32,11 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
                 if config.bans.is_empty() { "(none configured)".to_string() } else { config.bans.join(" → ") }
             ),
             format!(
-                "Lock-in Timers  ban {} / pick {}",
+                "Timers          ban {} / pick {} / hover {} / queue {}",
                 format_threshold(config.lock_in_ban_secs),
-                format_threshold(config.lock_in_pick_secs)
+                format_threshold(config.lock_in_pick_secs),
+                format_threshold(config.hover_pick_secs),
+                format_threshold(config.accept_queue_delay_secs),
             ),
             SAVE_EXIT.to_string(),
         ];
@@ -51,7 +53,7 @@ pub fn run(config: &mut Config, champion_names: Option<Vec<String>>) -> Result<(
             edit_picks_menu(config, champion_names.as_deref())?;
         } else if selection.starts_with("Bans") {
             edit_position(config, "Bans", champion_names.as_deref())?;
-        } else if selection.starts_with("Lock-in Timers") {
+        } else if selection.starts_with("Timers") {
             edit_timers(config)?;
         }
     }
@@ -356,22 +358,27 @@ fn action_move(config: &mut Config, position: &str, delta: i32) -> Result<()> {
 /// Interactive editor for lock-in timer thresholds.
 fn edit_timers(config: &mut Config) -> Result<()> {
     println!();
-    println!("  Lock-in Timers");
-    println!("  'Instant' locks in as soon as the phase starts (champion is hovered first).");
-    println!("  A number locks in when that many seconds or fewer remain.");
-    println!("  0 = lock at the very last moment.");
+    println!("  Timers");
+    println!("  'Instant' = act right away with no delay or timer check.");
+    println!("  A number = act when that many seconds or fewer remain / delay by that many seconds.");
     println!();
-    println!("  Current:  ban {}  /  pick {}",
+    println!(
+        "  Current:  ban {} / pick {} / hover {} / queue accept {}",
         format_threshold(config.lock_in_ban_secs),
-        format_threshold(config.lock_in_pick_secs));
+        format_threshold(config.lock_in_pick_secs),
+        format_threshold(config.hover_pick_secs),
+        format_threshold(config.accept_queue_delay_secs),
+    );
     println!();
 
-    config.lock_in_ban_secs  = prompt_threshold("Ban",  config.lock_in_ban_secs)?;
-    config.lock_in_pick_secs = prompt_threshold("Pick", config.lock_in_pick_secs)?;
+    config.lock_in_ban_secs        = prompt_threshold("Ban lock-in",        config.lock_in_ban_secs)?;
+    config.lock_in_pick_secs       = prompt_threshold("Pick lock-in",       config.lock_in_pick_secs)?;
+    config.hover_pick_secs         = prompt_threshold("Pick hover",         config.hover_pick_secs)?;
+    config.accept_queue_delay_secs = prompt_threshold("Queue accept delay", config.accept_queue_delay_secs)?;
     Ok(())
 }
 
-const TIMER_INSTANT: &str  = "Instant (lock as soon as hovered)";
+const TIMER_INSTANT: &str  = "Instant";
 const TIMER_CUSTOM: &str   = "Custom (enter seconds)";
 
 fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
@@ -388,7 +395,7 @@ fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
     ];
 
     let selection = match Select::new(
-        &format!("{label} lock-in timing (current: {current_str}):"),
+        &format!("{label} (current: {current_str}):"),
         options,
     ).prompt() {
         Ok(v) => v,
@@ -400,24 +407,24 @@ fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
     };
 
     if selection == TIMER_INSTANT {
-        println!("  {label} lock-in set to Instant.");
+        println!("  {label} set to Instant.");
         return Ok(INSTANT);
     }
 
     if selection.starts_with('0') {
-        println!("  {label} lock-in set to last possible moment (0s).");
+        println!("  {label} set to 0s.");
         return Ok(0);
     }
 
     // Fixed shortcut values like "5s"
     if selection != TIMER_CUSTOM
         && let Ok(secs) = selection.trim_end_matches('s').parse::<u64>() {
-            println!("  {label} lock-in set to ≤ {secs}s.");
+            println!("  {label} set to ≤ {secs}s.");
             return Ok(secs);
         }
 
     // Custom free-text
-    let input = match Text::new("Enter seconds (0 = last moment, higher = earlier lock-in):")
+    let input = match Text::new("Enter seconds:")
         .with_default(&if current == INSTANT { "5".to_string() } else { current.to_string() })
         .prompt()
     {
@@ -431,7 +438,7 @@ fn prompt_threshold(label: &str, current: u64) -> Result<u64> {
 
     match input.trim().parse::<u64>() {
         Ok(secs) => {
-            println!("  {label} lock-in set to ≤ {secs}s.");
+            println!("  {label} set to ≤ {secs}s.");
             Ok(secs)
         }
         Err(_) => {
