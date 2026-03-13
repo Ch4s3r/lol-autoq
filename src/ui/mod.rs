@@ -38,9 +38,6 @@ pub fn App() -> Element {
     });
 
     rsx! {
-        // Inject MD3 dark CSS into the webview document head
-        style { dangerous_inner_html: styles::CSS }
-
         div { class: "app",
             // Top bar
             div { class: "top-bar",

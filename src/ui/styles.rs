@@ -22,7 +22,7 @@ pub const CSS: &str = r#"
   --radius-lg:    16px;
 }
 
-html, body {
+html, body, #main {
   height: 100%;
   background: var(--bg);
   color: var(--on-surface);

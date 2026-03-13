@@ -6,11 +6,11 @@ mod ui;
 
 fn main() {
     let head = format!(
-        concat!(
-            "<meta http-equiv='Content-Security-Policy' content=\"",
-            "default-src 'self' 'unsafe-inline' data: https://ddragon.leagueoflegends.com",
-            "\">",
-        )
+        "<style>{}</style>\
+         <meta http-equiv='Content-Security-Policy' \
+               content=\"default-src 'self' 'unsafe-inline' data: \
+                         https://ddragon.leagueoflegends.com\">",
+        ui::styles::CSS,
     );
 
     dioxus::LaunchBuilder::desktop()
