@@ -14,6 +14,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 nom = "8"
-clap = { version = "4", features = ["derive"] }
-inquire = "0.9"
-rand = "0.8"
+rand = "0.10"
+dioxus = { version = "0.7", features = ["desktop"] }
+chrono = { version = "0.4", features = ["clock"] }

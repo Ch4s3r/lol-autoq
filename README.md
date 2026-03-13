@@ -2,6 +2,123 @@
 
 Automatically accepts ready checks and picks your preferred champion in champion select for League of Legends on **Windows**.
 
+Features a **Dioxus desktop GUI** with a Material Design 3 dark theme.
+
+---
+
+## How it works
+
+`lol-autoq` connects to the League Client (LCU) API running locally and polls the game state every 100 ms during active phases.
+
+| Phase | What it does |
+|---|---|
+| Ready Check | Auto-accepts the queue |
+| Champion Select | Hovers and locks in your highest-priority available champion for your assigned lane |
+| Banning | Hovers and locks in your highest-priority available ban |
+| In Game | Idles (polls every 30 s) |
+
+---
+
+## Requirements
+
+- League of Legends installed and running on **Windows**
+- The `lol-autoq.exe` binary
+
+---
+
+## Getting started
+
+### 1. Build (from source)
+
+```sh
+cargo build --release
+```
+
+Binary is at `target/release/lol-autoq.exe`.
+
+---
+
+### 2. Run
+
+```sh
+cargo run
+# or
+./lol-autoq
+```
+
+A desktop window opens. It will automatically connect to the League client when it is detected.
+
+---
+
+### 3. Configure in the GUI
+
+Click the **⚙ Settings** tab at the bottom of the window.
+
+#### Picks tab
+
+Six lane cards (Top, Jungle, Mid, Bot, Support, Fill) each show your champion priority list.
+
+- **+ Add champion** — opens a champion picker with a search field and portrait grid
+- **↑ / ↓** — reorder priority
+- **×** — remove a champion
+
+The first champion in the list that is not banned or already picked by a teammate will be hovered/locked.
+
+#### Bans tab
+
+Same as the Picks tab but for your ban priority list.
+
+#### Timers tab
+
+Sliders (0 – 30 s) with an **⚡ Instant** toggle for each timer:
+
+| Timer | Meaning |
+|---|---|
+| Ban lock-in | Lock in the ban when ≤ N seconds remain |
+| Pick lock-in | Lock in the pick when ≤ N seconds remain |
+| Pick hover | Hover champion when ≤ N seconds remain (Instant = immediately) |
+| Queue accept delay | Wait N seconds before accepting a queue pop |
+| Timer jitter | Random extra delay added to each threshold (0 = off) |
+
+Changes save to `config.toml` automatically.
+
+---
+
+## Configuration file
+
+`config.toml` is placed next to the executable and can also be edited by hand.
+
+```toml
+bans = ["Zed", "Yasuo", "Yone"]
+lock_in_ban_secs = 5
+lock_in_pick_secs = 10
+hover_pick_secs = 18446744073709551615   # INSTANT
+accept_queue_delay_secs = 18446744073709551615
+timer_jitter_secs = 0
+
+[preferences]
+top     = ["Darius", "Garen", "Malphite"]
+jungle  = ["Vi", "Warwick", "Amumu"]
+mid     = ["Lux", "Ahri", "Syndra"]
+bot     = ["Jinx", "Caitlyn", "Jhin"]
+support = ["Thresh", "Lulu", "Sona"]
+fill    = ["Garen", "Lux"]
+```
+
+`18446744073709551615` (`u64::MAX`) is the sentinel for **Instant**.
+
+---
+
+## Build commands
+
+```sh
+cargo build                  # debug build
+cargo build --release        # release build
+cargo run                    # run with GUI window
+RUST_LOG=trace cargo run     # verbose logging
+```
+
+
 ---
 
 ## How it works
