@@ -10,7 +10,7 @@ cargo run -- configure               # interactive champion/ban/timer config TUI
 RUST_LOG=trace cargo run -- start    # verbose logging (every HTTP call + decisions)
 ```
 
-No tests exist yet. After adding a dependency, run `cargo upgrade incompatible`.
+No tests exist yet. After adding a dependency, run `cargo upgrade --incompatible`.
 
 ## Architecture
 
