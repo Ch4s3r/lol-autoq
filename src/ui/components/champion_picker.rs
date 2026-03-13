@@ -58,7 +58,9 @@ pub fn ChampionPickerModal(
                     placeholder: "Search champions…",
                     value: "{query}",
                     oninput: move |e| query.set(e.value()),
-                    autofocus: true,
+                    onmounted: move |e| async move {
+                        let _ = e.set_focus(true).await;
+                    },
                     onkeydown: move |e| {
                         if e.key() == Key::Enter {
                             if let Some(name) = first_name.clone() {

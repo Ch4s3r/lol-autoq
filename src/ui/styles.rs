@@ -276,6 +276,25 @@ html, body, #main {
   border-bottom: 1px solid rgba(73,69,79,0.4);
 }
 .champ-item:last-child { border-bottom: none; }
+.champ-item[draggable]:hover { background: rgba(73,69,79,0.3); border-radius: var(--radius-sm); }
+.champ-list-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center top;
+  flex-shrink: 0;
+  background: var(--outline);
+}
+.champ-drag-handle {
+  color: var(--outline);
+  font-size: 12px;
+  cursor: grab;
+  padding: 0 4px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.champ-item:hover .champ-drag-handle { color: var(--muted); }
 .champ-num { color: var(--muted); min-width: 18px; font-size: 11px; font-weight: 600; }
 .champ-name { flex: 1; font-size: 13px; color: var(--on-surface); }
 .champ-actions { display: flex; gap: 2px; }
