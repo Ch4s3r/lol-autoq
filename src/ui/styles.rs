@@ -207,14 +207,10 @@ html, body, #main {
 }
 .activity-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 1px;
-  max-height: 160px;
+  max-height: 150px;
   overflow-y: auto;
-  overflow-anchor: auto;
-}
-.activity-list > :last-child {
-  overflow-anchor: auto;
 }
 .activity-entry {
   display: flex;
@@ -222,6 +218,7 @@ html, body, #main {
   padding: 3px 0;
   font-size: 12px;
   animation: fade-in 0.25s ease;
+  flex-shrink: 0;
 }
 .activity-time { color: var(--muted); min-width: 54px; flex-shrink: 0; }
 .activity-info    { color: var(--on-surf-var); }
