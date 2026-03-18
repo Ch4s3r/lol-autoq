@@ -207,10 +207,11 @@ html, body, #main {
 }
 .activity-list {
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   gap: 1px;
   max-height: 150px;
   overflow-y: auto;
+  overflow-anchor: none;
 }
 .activity-entry {
   display: flex;
@@ -218,6 +219,12 @@ html, body, #main {
   padding: 3px 0;
   font-size: 12px;
   animation: fade-in 0.25s ease;
+  flex-shrink: 0;
+  overflow-anchor: none;
+}
+.activity-anchor {
+  overflow-anchor: auto;
+  height: 0;
   flex-shrink: 0;
 }
 .activity-time { color: var(--muted); min-width: 54px; flex-shrink: 0; }
