@@ -401,31 +401,60 @@ input[type=range]:disabled { opacity: 0.35; cursor: not-allowed; }
 input[type=range]:disabled::-webkit-slider-thumb { cursor: not-allowed; }
 
 /* ── Dual-thumb range slider (jitter) ──────────────────────────────── */
-.jitter-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
+.range-slider {
+  position: relative;
+  height: 28px;        /* tall enough for the 20px thumb + shadow */
+  margin: 10px 0 4px;
 }
-.jitter-bound-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  min-width: 26px;
-  flex-shrink: 0;
+/* visible shared track */
+.range-slider::before {
+  content: '';
+  position: absolute;
+  left: 10px; right: 10px;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: var(--outline);
+  border-radius: 2px;
+  pointer-events: none;
 }
-.jitter-row input[type=range] {
-  flex: 1;
+.range-slider input[type=range] {
+  position: absolute;
+  left: 0; width: 100%;
+  top: 50%;
+  transform: translateY(-50%);
   margin: 0;
+  height: 28px;
+  background: transparent;
+  pointer-events: none;
 }
-.jitter-min::-webkit-slider-thumb { background: var(--secondary); box-shadow: 0 0 0 4px rgba(204,194,220,0.18); }
-.jitter-min:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(204,194,220,0.25); }
-.jitter-bound-val {
-  font-size: 11px;
-  color: var(--on-surf-var);
-  min-width: 24px;
-  text-align: right;
-  flex-shrink: 0;
+/* make the runnable-track transparent so only our ::before rail shows */
+.range-slider input[type=range]::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 4px;
+}
+/* both thumbs: restore full appearance, enable pointer events */
+.range-slider input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  box-shadow: 0 0 0 4px rgba(208,188,255,0.18);
+  transition: box-shadow 0.15s;
+  margin-top: -8px;   /* centre on the 4px track */
+}
+.range-slider input[type=range]:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px rgba(208,188,255,0.25);
+}
+/* min thumb uses secondary colour so both handles are visually distinct */
+.range-slider input.range-min::-webkit-slider-thumb {
+  background: var(--secondary);
+  box-shadow: 0 0 0 4px rgba(204,194,220,0.18);
+}
+.range-slider input.range-min:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px rgba(204,194,220,0.25);
 }
 .instant-row {
   display: flex;

@@ -15,46 +15,44 @@ pub fn JitterRangeSlider(
         format!("{min_val}–{max_val}s")
     };
 
+    // When both thumbs are at the same position the min thumb must sit on top
+    // so the user can drag it rightward. Otherwise max stays on top so it can
+    // be dragged leftward past min.
+    let min_z = if min_val >= max_val { 5 } else { 3 };
+    let max_z = if min_val >= max_val { 4 } else { 5 };
+
     rsx! {
         div { class: "timer-card",
             div { class: "timer-label", "Timer jitter" }
             div { class: "timer-sublabel", "Random delay added at lock-in (0 = off)" }
             div { class: "timer-value", "{display}" }
-
-            div { class: "jitter-row",
-                span { class: "jitter-bound-label", "Min" }
+            div { class: "range-slider",
                 input {
                     r#type: "range",
-                    class: "jitter-min",
+                    class: "range-min",
+                    style: "z-index: {min_z};",
                     min: "0",
                     max: "{max_secs}",
                     value: "{min_val}",
                     oninput: move |e| {
                         if let Ok(v) = e.value().parse::<u64>() {
-                            // min cannot exceed max
                             on_change.call((v.min(max_val), max_val));
                         }
                     },
                 }
-                span { class: "jitter-bound-val", "{min_val}s" }
-            }
-
-            div { class: "jitter-row",
-                span { class: "jitter-bound-label", "Max" }
                 input {
                     r#type: "range",
-                    class: "jitter-max",
+                    class: "range-max",
+                    style: "z-index: {max_z};",
                     min: "0",
                     max: "{max_secs}",
                     value: "{max_val}",
                     oninput: move |e| {
                         if let Ok(v) = e.value().parse::<u64>() {
-                            // max cannot go below min
                             on_change.call((min_val, v.max(min_val)));
                         }
                     },
                 }
-                span { class: "jitter-bound-val", "{max_val}s" }
             }
         }
     }
