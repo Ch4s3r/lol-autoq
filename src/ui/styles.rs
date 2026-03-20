@@ -400,52 +400,31 @@ input[type=range]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(208,1
 input[type=range]:disabled { opacity: 0.35; cursor: not-allowed; }
 input[type=range]:disabled::-webkit-slider-thumb { cursor: not-allowed; }
 
-/* ── Dual-thumb range slider (jitter) ──────────────────────────────── */
-.range-slider {
-  position: relative;
-  height: 36px;
-  margin: 10px 0 4px;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
+/* ── Jitter min/max sliders ─────────────────────────────────────────── */
+.jitter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
 }
-.range-track {
-  position: absolute;
-  left: 10px; right: 10px;
-  top: 50%; transform: translateY(-50%);
-  height: 4px;
-  background: var(--outline);
-  border-radius: 2px;
+.jitter-bound-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 26px;
+  flex-shrink: 0;
 }
-.range-fill {
-  position: absolute;
-  top: 50%; transform: translateY(-50%);
-  height: 4px;
-  background: var(--primary);
-  border-radius: 2px;
-  pointer-events: none;
-  /* left and width set by JS */
-  left: 10px; width: 0;
+.jitter-row input[type=range] {
+  flex: 1;
+  margin: 0;
 }
-.range-thumb {
-  position: absolute;
-  top: 50%; transform: translate(-50%, -50%);
-  width: 20px; height: 20px;
-  border-radius: 50%;
-  background: var(--primary);
-  box-shadow: 0 0 0 4px rgba(208,188,255,0.18);
-  transition: box-shadow 0.15s;
-  cursor: grab;
-  /* left set by JS */
-  left: 10px;
+.jitter-bound-val {
+  font-size: 11px;
+  color: var(--on-surf-var);
+  min-width: 24px;
+  text-align: right;
+  flex-shrink: 0;
 }
-.range-thumb:active { cursor: grabbing; }
-.range-thumb:hover { box-shadow: 0 0 0 6px rgba(208,188,255,0.25); }
-.range-thumb.range-min {
-  background: var(--secondary);
-  box-shadow: 0 0 0 4px rgba(204,194,220,0.18);
-}
-.range-thumb.range-min:hover { box-shadow: 0 0 0 6px rgba(204,194,220,0.25); }
 .instant-row {
   display: flex;
   align-items: center;
