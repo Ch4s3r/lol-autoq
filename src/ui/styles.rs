@@ -401,53 +401,32 @@ input[type=range]:disabled { opacity: 0.35; cursor: not-allowed; }
 input[type=range]:disabled::-webkit-slider-thumb { cursor: not-allowed; }
 
 /* ── Dual-thumb range slider (jitter) ──────────────────────────────── */
-.range-slider {
-  position: relative;
-  height: 36px;
-  margin: 4px 0 0;
+.jitter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
 }
-/* Shared visible track rendered behind both thumbs */
-.range-slider::before {
-  content: '';
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  top: 50%;
-  height: 4px;
-  transform: translateY(-50%);
-  background: var(--outline);
-  border-radius: 2px;
-  pointer-events: none;
+.jitter-bound-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 26px;
+  flex-shrink: 0;
 }
-.range-slider input[type=range] {
-  position: absolute;
-  left: 0;
-  width: 100%;
+.jitter-row input[type=range] {
+  flex: 1;
   margin: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  background: transparent;
-  height: 36px; /* tall enough to make the thumb hit area reliable */
 }
-.range-slider input[type=range]::-webkit-slider-runnable-track {
-  background: transparent;
-  height: 4px;
+.jitter-min::-webkit-slider-thumb { background: var(--secondary); box-shadow: 0 0 0 4px rgba(204,194,220,0.18); }
+.jitter-min:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(204,194,220,0.25); }
+.jitter-bound-val {
+  font-size: 11px;
+  color: var(--on-surf-var);
+  min-width: 24px;
+  text-align: right;
+  flex-shrink: 0;
 }
-.range-slider input[type=range]::-webkit-slider-thumb {
-  pointer-events: auto;
-  margin-top: -8px; /* re-center thumb on the 4px track */
-}
-/* Min thumb: secondary colour so the two handles are visually distinct */
-.range-slider input.range-min::-webkit-slider-thumb {
-  background: var(--secondary);
-  box-shadow: 0 0 0 4px rgba(204,194,220,0.18);
-}
-.range-slider input.range-min:hover::-webkit-slider-thumb {
-  box-shadow: 0 0 0 6px rgba(204,194,220,0.25);
-}
-.range-slider input.range-min { z-index: 3; }
-.range-slider input.range-max { z-index: 4; }
 .instant-row {
   display: flex;
   align-items: center;

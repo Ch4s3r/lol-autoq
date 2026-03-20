@@ -20,31 +20,41 @@ pub fn JitterRangeSlider(
             div { class: "timer-label", "Timer jitter" }
             div { class: "timer-sublabel", "Random delay added at lock-in (0 = off)" }
             div { class: "timer-value", "{display}" }
-            div { class: "range-slider",
+
+            div { class: "jitter-row",
+                span { class: "jitter-bound-label", "Min" }
                 input {
                     r#type: "range",
-                    class: "range-min",
+                    class: "jitter-min",
                     min: "0",
                     max: "{max_secs}",
                     value: "{min_val}",
                     oninput: move |e| {
                         if let Ok(v) = e.value().parse::<u64>() {
+                            // min cannot exceed max
                             on_change.call((v.min(max_val), max_val));
                         }
                     },
                 }
+                span { class: "jitter-bound-val", "{min_val}s" }
+            }
+
+            div { class: "jitter-row",
+                span { class: "jitter-bound-label", "Max" }
                 input {
                     r#type: "range",
-                    class: "range-max",
+                    class: "jitter-max",
                     min: "0",
                     max: "{max_secs}",
                     value: "{max_val}",
                     oninput: move |e| {
                         if let Ok(v) = e.value().parse::<u64>() {
+                            // max cannot go below min
                             on_change.call((min_val, v.max(min_val)));
                         }
                     },
                 }
+                span { class: "jitter-bound-val", "{max_val}s" }
             }
         }
     }
