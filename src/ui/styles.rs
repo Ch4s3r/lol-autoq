@@ -406,17 +406,45 @@ input[type=range]:disabled::-webkit-slider-thumb { cursor: not-allowed; }
   height: 36px;
   margin: 4px 0 0;
 }
+/* Shared visible track rendered behind both thumbs */
+.range-slider::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: var(--outline);
+  border-radius: 2px;
+  pointer-events: none;
+}
 .range-slider input[type=range] {
   position: absolute;
   left: 0;
   width: 100%;
   margin: 0;
-  top: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   pointer-events: none;
   background: transparent;
+  height: 36px; /* tall enough to make the thumb hit area reliable */
+}
+.range-slider input[type=range]::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 4px;
 }
 .range-slider input[type=range]::-webkit-slider-thumb {
   pointer-events: auto;
+  margin-top: -8px; /* re-center thumb on the 4px track */
+}
+/* Min thumb: secondary colour so the two handles are visually distinct */
+.range-slider input.range-min::-webkit-slider-thumb {
+  background: var(--secondary);
+  box-shadow: 0 0 0 4px rgba(204,194,220,0.18);
+}
+.range-slider input.range-min:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px rgba(204,194,220,0.25);
 }
 .range-slider input.range-min { z-index: 3; }
 .range-slider input.range-max { z-index: 4; }
