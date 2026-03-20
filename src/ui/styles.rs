@@ -395,6 +395,27 @@ input[type=range]::-webkit-slider-thumb {
 input[type=range]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 6px rgba(208,188,255,0.25); }
 input[type=range]:disabled { opacity: 0.35; cursor: not-allowed; }
 input[type=range]:disabled::-webkit-slider-thumb { cursor: not-allowed; }
+
+/* ── Dual-thumb range slider (jitter) ──────────────────────────────── */
+.range-slider {
+  position: relative;
+  height: 36px;
+  margin: 4px 0 0;
+}
+.range-slider input[type=range] {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  margin: 0;
+  top: 8px;
+  pointer-events: none;
+  background: transparent;
+}
+.range-slider input[type=range]::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+.range-slider input.range-min { z-index: 3; }
+.range-slider input.range-max { z-index: 4; }
 .instant-row {
   display: flex;
   align-items: center;

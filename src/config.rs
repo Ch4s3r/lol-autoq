@@ -38,11 +38,12 @@ pub struct Config {
     /// Seconds to wait after a queue pop before accepting. INSTANT = accept immediately.
     #[serde(default = "default_accept_queue_delay_secs")]
     pub accept_queue_delay_secs: u64,
-    /// Maximum random extra delay (in seconds) added to each timer action.
-    /// Each action rolls 0..=timer_jitter_secs at phase entry, making timing less predictable.
-    /// 0 = deterministic (no jitter).
+    /// Minimum random jitter added to each timer action (seconds). Default 0.
     #[serde(default)]
-    pub timer_jitter_secs: u64,
+    pub jitter_min_secs: u64,
+    /// Maximum random jitter added to each timer action (seconds). Default 0.
+    #[serde(default)]
+    pub jitter_max_secs: u64,
     /// Minimum log level written to the activity log and `lol-autoq.log`.
     /// Valid values: "error", "warn", "info", "debug", "trace". Default: "info".
     #[serde(default = "default_log_level")]
@@ -92,7 +93,8 @@ impl Default for Config {
             lock_in_pick_secs: default_lock_in_pick_secs(),
             hover_pick_secs: default_hover_pick_secs(),
             accept_queue_delay_secs: default_accept_queue_delay_secs(),
-            timer_jitter_secs: 0,
+            jitter_min_secs: 0,
+            jitter_max_secs: 0,
             log_level: default_log_level(),
             preferences: LanePreferences {
                 top: vec!["Darius".into(), "Garen".into(), "Malphite".into()],

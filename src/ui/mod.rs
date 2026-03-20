@@ -183,10 +183,10 @@ async fn inner_poll_loop(
             state.hovered_champion.set(None);
 
             let cfg = state.config.read();
-            ban_jitter   = roll_jitter(cfg.timer_jitter_secs);
-            hover_jitter = roll_jitter(cfg.timer_jitter_secs);
-            pick_jitter  = roll_jitter(cfg.timer_jitter_secs);
-            queue_jitter = roll_jitter(cfg.timer_jitter_secs);
+            ban_jitter   = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
+            hover_jitter = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
+            pick_jitter  = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
+            queue_jitter = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
         }
 
         let cfg: Config = state.config.read().clone();
@@ -289,11 +289,12 @@ async fn inner_poll_loop(
     }
 }
 
-pub(crate) fn roll_jitter(max_secs: u64) -> u64 {
+pub(crate) fn roll_jitter(min_secs: u64, max_secs: u64) -> u64 {
     if max_secs == 0 {
         return 0;
     }
-    rand::random_range(0..=max_secs)
+    let lo = min_secs.min(max_secs);
+    rand::random_range(lo..=max_secs)
 }
 
 #[cfg(test)]
@@ -326,14 +327,30 @@ mod tests {
     #[test]
     fn roll_jitter_zero_max_always_returns_zero() {
         for _ in 0..100 {
-            assert_eq!(roll_jitter(0), 0);
+            assert_eq!(roll_jitter(0, 0), 0);
         }
     }
 
     #[test]
     fn roll_jitter_result_within_range() {
         for _ in 0..200 {
-            let j = roll_jitter(10);
+            let j = roll_jitter(0, 10);
+            assert!(j <= 10, "jitter {j} exceeded max of 10");
+        }
+    }
+
+    #[test]
+    fn roll_jitter_min_equals_max_returns_that_value() {
+        for _ in 0..50 {
+            assert_eq!(roll_jitter(7, 7), 7);
+        }
+    }
+
+    #[test]
+    fn roll_jitter_result_at_least_min() {
+        for _ in 0..200 {
+            let j = roll_jitter(3, 10);
+            assert!(j >= 3, "jitter {j} was below min of 3");
             assert!(j <= 10, "jitter {j} exceeded max of 10");
         }
     }

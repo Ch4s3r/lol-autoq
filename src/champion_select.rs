@@ -7,9 +7,9 @@ use crate::config::{Config, INSTANT};
 use crate::lcu::{Action, ChampSelectSession, ChampionSummary, LcuClient};
 
 /// Compute the effective lock-in threshold in seconds after applying jitter.
-/// If jitter >= configured, the threshold clamps to 0 (act at the last moment).
+/// Jitter is added to the configured threshold so the bot acts later (more human).
 pub(crate) fn effective_threshold(configured_secs: u64, jitter_secs: u64) -> f64 {
-    (configured_secs as i64 - jitter_secs as i64).max(0) as f64
+    (configured_secs + jitter_secs) as f64
 }
 
 /// Returns:
@@ -569,23 +569,18 @@ mod tests {
     }
 
     #[test]
-    fn effective_threshold_jitter_reduces_threshold() {
-        assert_eq!(effective_threshold(10, 3), 7.0);
+    fn effective_threshold_jitter_increases_threshold() {
+        assert_eq!(effective_threshold(10, 3), 13.0);
     }
 
     #[test]
-    fn effective_threshold_jitter_equals_threshold_clamps_to_zero() {
-        assert_eq!(effective_threshold(5, 5), 0.0);
+    fn effective_threshold_zero_base_with_jitter() {
+        assert_eq!(effective_threshold(0, 5), 5.0);
     }
 
     #[test]
-    fn effective_threshold_jitter_exceeds_threshold_clamps_to_zero() {
-        assert_eq!(effective_threshold(5, 8), 0.0);
-    }
-
-    #[test]
-    fn effective_threshold_large_jitter_on_zero_stays_zero() {
-        assert_eq!(effective_threshold(0, 999), 0.0);
+    fn effective_threshold_both_zero_stays_zero() {
+        assert_eq!(effective_threshold(0, 0), 0.0);
     }
 
     // ── build_champion_map ────────────────────────────────────────────────────

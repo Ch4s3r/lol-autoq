@@ -5,6 +5,7 @@ use super::components::{
     lane_card::LaneCard,
     timer_slider::TimerSlider,
     champion_picker::ChampionPickerModal,
+    jitter_range_slider::JitterRangeSlider,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -229,7 +230,8 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
     let lock_pick = state.config.read().lock_in_pick_secs;
     let hover     = state.config.read().hover_pick_secs;
     let queue     = state.config.read().accept_queue_delay_secs;
-    let jitter    = state.config.read().timer_jitter_secs;
+    let jitter_min = state.config.read().jitter_min_secs;
+    let jitter_max = state.config.read().jitter_max_secs;
     let log_level = state.config.read().log_level.clone();
 
     // Non-INSTANT values must fit in 0-30s for the slider
@@ -290,26 +292,20 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                 },
             }
 
-            // Jitter slider — never Instant, always 0-15s
-            div { class: "timer-card",
-                div { class: "timer-label", "Timer jitter" }
-                div { class: "timer-sublabel", "Random extra delay (0 = off)" }
-                div { class: "timer-value", "{jitter}s" }
-                input {
-                    r#type: "range",
-                    min: "0",
-                    max: "15",
-                    value: "{jitter}",
-                    oninput: {
-                        let on_save = on_save;
-                        move |e: Event<FormData>| {
-                            if let Ok(v) = e.value().parse::<u64>() {
-                                state.config.write().timer_jitter_secs = v;
-                                on_save.call(());
-                            }
-                        }
-                    },
-                }
+            JitterRangeSlider {
+                min_val: jitter_min,
+                max_val: jitter_max,
+                max_secs: 30,
+                on_change: {
+                    let on_save = on_save;
+                    move |(lo, hi)| {
+                        let mut cfg = state.config.write();
+                        cfg.jitter_min_secs = lo;
+                        cfg.jitter_max_secs = hi;
+                        drop(cfg);
+                        on_save.call(());
+                    }
+                },
             }
 
             // Log level selector
