@@ -256,6 +256,18 @@ fn all_bans_completed(session: &ChampSelectSession) -> bool {
 
 /// into a HashSet for O(1) membership testing.
 fn unavailable_champion_ids(session: &ChampSelectSession) -> HashSet<i64> {
+    let enemy_picks = session
+        .actions
+        .iter()
+        .flatten()
+        .filter(|a| {
+            a.action_type == "pick"
+                && a.completed
+                && a.actor_cell_id != session.local_player_cell_id
+                && a.champion_id != 0
+        })
+        .map(|a| a.champion_id);
+
     session
         .my_team
         .iter()
@@ -263,6 +275,7 @@ fn unavailable_champion_ids(session: &ChampSelectSession) -> HashSet<i64> {
         .map(|m| m.champion_id)
         .chain(session.bans.my_team_bans.iter().copied())
         .chain(session.bans.their_team_bans.iter().copied())
+        .chain(enemy_picks)
         .collect()
 }
 
@@ -947,22 +960,46 @@ mod tests {
         let mut cfg = default_pick_config();
         cfg.preferences.mid = vec!["Ahri".into()]; // only Ahri configured, no fallback
         cfg.lock_in_pick_secs = 5;
-        // We're hovering Ahri but it got banned → AllPicksExhausted (best_pick_target returns None)
-        // To get StaleHover: hover state says (action_id=20, champion_id=1), and unavailable contains 1
-        // The function re-checks unavailability just before LockIn and returns StaleHover.
-        // but since best_pick_target comes first, and Ahri is banned → AllPicksExhausted.
-        // StaleHover is only triggered when the champion we're hovering is re-checked right before lock.
-        // To hit that path, we need a second champion that IS available for best_pick_target,
-        // but the hovered champion (1) is in unavailable.
-        // → hovered = (20, 1) but chosen = (20, 2) because Ahri is banned → triggers Hover(Zed), not StaleHover.
-        // Correct way: hovered = (20, 1), chosen_id = 1, but unavailable contains 1 at final re-check.
-        // That requires Ahri to pass best_pick_target (not in unavailable set built from bans+team)
-        // but then be found in unavailable at the second check. That can't happen in current code since
-        // both checks use the same session state.
-        // The StaleHover path is actually unreachable when unavailable is derived from session each time.
-        // Document this and test AllPicksExhausted instead.
+        // We're hovering Ahri but it got banned → AllPicksExhausted (best_pick_target returns None).
+        // StaleHover would require Ahri to pass best_pick_target (not in unavailable) but then fail
+        // the secondary unavailability check just before lock-in. Both checks derive unavailable from
+        // the same live session state, so they are always consistent — StaleHover is unreachable.
+        // The enemy-pick scenario (hovered champion taken by an opponent) is covered separately in
+        // decide_pick_re_hovers_when_hovered_champion_picked_by_enemy, where unavailable_champion_ids
+        // now includes completed non-local pick actions, causing best_pick_target to skip Ahri and
+        // return Zed, which triggers a re-hover before we even reach the StaleHover check.
         let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
         assert_eq!(result, PickDecision::AllPicksExhausted { position: "Mid".into() });
+    }
+
+    #[test]
+    fn decide_pick_re_hovers_when_hovered_champion_picked_by_enemy() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        // Local player is cell 3, not-yet-our-turn pick action (is_in_progress=false)
+        let our_pick   = make_action(20, 3, "pick", false, false);
+        let ban        = make_action(1, 0, "ban", false, true); // completed ban so guard passes
+        let member     = make_member(3, "middle", 0);
+        // Enemy (cell 7, not local cell 3) has already completed a pick of Ahri (id=1)
+        let enemy_pick = make_action_with_champ(30, 7, "pick", false, true, 1);
+        let mut session = make_session(
+            3,
+            vec![vec![ban, our_pick, enemy_pick]],
+            vec![member],
+            Bans::default(),
+            "BAN_PICK",
+        );
+        session.timer.adjusted_time_left_ms = 20_000;
+        // Config: primary = Ahri, secondary = Zed
+        let cfg = default_pick_config(); // mid = ["Ahri", "Zed"], hover_pick_secs = INSTANT
+        // We previously hovered Ahri (action_id=20, champion_id=1)
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        // Ahri is now unavailable (picked by enemy) → bot should re-hover Zed
+        assert_eq!(result, PickDecision::Hover {
+            action_id: 20,
+            champion_id: 2,
+            champion_name: "Zed".into(),
+            position: "Mid".into(),
+        });
     }
 
     #[test]
