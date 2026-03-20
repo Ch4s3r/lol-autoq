@@ -403,59 +403,49 @@ input[type=range]:disabled::-webkit-slider-thumb { cursor: not-allowed; }
 /* ── Dual-thumb range slider (jitter) ──────────────────────────────── */
 .range-slider {
   position: relative;
-  height: 28px;        /* tall enough for the 20px thumb + shadow */
+  height: 36px;
   margin: 10px 0 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
-/* visible shared track */
-.range-slider::before {
-  content: '';
+.range-track {
   position: absolute;
   left: 10px; right: 10px;
-  top: 50%;
+  top: 50%; transform: translateY(-50%);
   height: 4px;
-  transform: translateY(-50%);
   background: var(--outline);
   border-radius: 2px;
-  pointer-events: none;
 }
-.range-slider input[type=range] {
+.range-fill {
   position: absolute;
-  left: 0; width: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin: 0;
-  height: 28px;
-  background: transparent;
-  pointer-events: none;
-}
-/* make the runnable-track transparent so only our ::before rail shows */
-.range-slider input[type=range]::-webkit-slider-runnable-track {
-  background: transparent;
+  top: 50%; transform: translateY(-50%);
   height: 4px;
+  background: var(--primary);
+  border-radius: 2px;
+  pointer-events: none;
+  /* left and width set by JS */
+  left: 10px; width: 0;
 }
-/* both thumbs: restore full appearance, enable pointer events */
-.range-slider input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  pointer-events: auto;
+.range-thumb {
+  position: absolute;
+  top: 50%; transform: translate(-50%, -50%);
   width: 20px; height: 20px;
   border-radius: 50%;
   background: var(--primary);
-  cursor: pointer;
   box-shadow: 0 0 0 4px rgba(208,188,255,0.18);
   transition: box-shadow 0.15s;
-  margin-top: -8px;   /* centre on the 4px track */
+  cursor: grab;
+  /* left set by JS */
+  left: 10px;
 }
-.range-slider input[type=range]:hover::-webkit-slider-thumb {
-  box-shadow: 0 0 0 6px rgba(208,188,255,0.25);
-}
-/* min thumb uses secondary colour so both handles are visually distinct */
-.range-slider input.range-min::-webkit-slider-thumb {
+.range-thumb:active { cursor: grabbing; }
+.range-thumb:hover { box-shadow: 0 0 0 6px rgba(208,188,255,0.25); }
+.range-thumb.range-min {
   background: var(--secondary);
   box-shadow: 0 0 0 4px rgba(204,194,220,0.18);
 }
-.range-slider input.range-min:hover::-webkit-slider-thumb {
-  box-shadow: 0 0 0 6px rgba(204,194,220,0.25);
-}
+.range-thumb.range-min:hover { box-shadow: 0 0 0 6px rgba(204,194,220,0.25); }
 .instant-row {
   display: flex;
   align-items: center;

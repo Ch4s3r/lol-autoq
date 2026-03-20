@@ -1,3 +1,4 @@
+use dioxus::document::eval;
 use dioxus::prelude::*;
 
 #[component]
@@ -7,20 +8,12 @@ pub fn JitterRangeSlider(
     max_secs: u64,
     on_change: EventHandler<(u64, u64)>,
 ) -> Element {
-    // Local signals own the thumb positions so that dragging one thumb
-    // doesn't cause the other's value attribute to be overwritten mid-drag.
     let mut local_min = use_signal(|| min_val);
     let mut local_max = use_signal(|| max_val);
 
-    // Keep local state in sync when the parent pushes new prop values
-    // (e.g. after a config reload). Only update when the prop actually differs
-    // from what we have, so we don't clobber an in-progress drag.
-    if *local_min.read() != min_val {
-        local_min.set(min_val);
-    }
-    if *local_max.read() != max_val {
-        local_max.set(max_val);
-    }
+    // Sync from parent only when props genuinely change (e.g. config reload)
+    if *local_min.read() != min_val { local_min.set(min_val); }
+    if *local_max.read() != max_val { local_max.set(max_val); }
 
     let lo = *local_min.read();
     let hi = *local_max.read();
@@ -33,9 +26,90 @@ pub fn JitterRangeSlider(
         format!("{lo}–{hi}s")
     };
 
-    // When both thumbs coincide, put min on top so it can be dragged right.
-    let min_z = if lo >= hi { 5 } else { 3 };
-    let max_z = if lo >= hi { 4 } else { 5 };
+    // Inject JS once on mount to handle all pointer interaction imperatively.
+    // JS sends {lo, hi} via dioxus.send() on every pointermove and pointerup.
+    use_effect(move || {
+        let script = format!(r#"
+(function() {{
+    const slider = document.querySelector('.range-slider');
+    if (!slider || slider._jitter_init) return;
+    slider._jitter_init = true;
+
+    const MAX = {max_secs};
+    let lo = {lo};
+    let hi = {hi};
+    let dragging = null; // 'min' | 'max'
+
+    function pct(v) {{ return v / MAX; }}
+
+    function thumbEl(which) {{
+        return slider.querySelector('.range-' + which);
+    }}
+
+    function posFromEvent(e) {{
+        const rect = slider.getBoundingClientRect();
+        const padding = 10;
+        const usable = rect.width - padding * 2;
+        const x = Math.max(0, Math.min(e.clientX - rect.left - padding, usable));
+        return Math.round((x / usable) * MAX);
+    }}
+
+    function updateThumbs() {{
+        const minEl = thumbEl('min');
+        const maxEl = thumbEl('max');
+        if (minEl) minEl.style.left = (pct(lo) * 100) + '%';
+        if (maxEl) maxEl.style.left = (pct(hi) * 100) + '%';
+        // fill bar
+        const fill = slider.querySelector('.range-fill');
+        if (fill) {{
+            fill.style.left = (pct(lo) * 100) + '%';
+            fill.style.width = (pct(hi - lo) * 100) + '%';
+        }}
+    }}
+
+    slider.addEventListener('pointerdown', function(e) {{
+        const minEl = thumbEl('min');
+        const maxEl = thumbEl('max');
+        const distMin = minEl ? Math.abs(e.clientX - minEl.getBoundingClientRect().left - 10) : Infinity;
+        const distMax = maxEl ? Math.abs(e.clientX - maxEl.getBoundingClientRect().left - 10) : Infinity;
+        dragging = distMin <= distMax ? 'min' : 'max';
+        slider.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    }});
+
+    slider.addEventListener('pointermove', function(e) {{
+        if (!dragging) return;
+        const v = posFromEvent(e);
+        if (dragging === 'min') {{ lo = Math.min(v, hi); }}
+        else                   {{ hi = Math.max(v, lo); }}
+        updateThumbs();
+        dioxus.send({{ lo, hi }});
+        e.preventDefault();
+    }});
+
+    slider.addEventListener('pointerup', function(e) {{
+        dragging = null;
+    }});
+
+    updateThumbs();
+}})();
+"#, max_secs = max_secs, lo = lo, hi = hi);
+        let mut ev = eval(&script);
+        spawn(async move {
+            loop {
+                match ev.recv::<serde_json::Value>().await {
+                    Ok(v) => {
+                        let new_lo = v["lo"].as_u64().unwrap_or(lo);
+                        let new_hi = v["hi"].as_u64().unwrap_or(hi);
+                        local_min.set(new_lo);
+                        local_max.set(new_hi);
+                        on_change.call((new_lo, new_hi));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+    });
 
     rsx! {
         div { class: "timer-card",
@@ -43,36 +117,10 @@ pub fn JitterRangeSlider(
             div { class: "timer-sublabel", "Random delay added at lock-in (0 = off)" }
             div { class: "timer-value", "{display}" }
             div { class: "range-slider",
-                input {
-                    r#type: "range",
-                    class: "range-min",
-                    style: "z-index: {min_z};",
-                    min: "0",
-                    max: "{max_secs}",
-                    value: "{lo}",
-                    oninput: move |e| {
-                        if let Ok(v) = e.value().parse::<u64>() {
-                            let clamped = v.min(*local_max.read());
-                            local_min.set(clamped);
-                            on_change.call((clamped, *local_max.read()));
-                        }
-                    },
-                }
-                input {
-                    r#type: "range",
-                    class: "range-max",
-                    style: "z-index: {max_z};",
-                    min: "0",
-                    max: "{max_secs}",
-                    value: "{hi}",
-                    oninput: move |e| {
-                        if let Ok(v) = e.value().parse::<u64>() {
-                            let clamped = v.max(*local_min.read());
-                            local_max.set(clamped);
-                            on_change.call((*local_min.read(), clamped));
-                        }
-                    },
-                }
+                div { class: "range-track" }
+                div { class: "range-fill" }
+                div { class: "range-thumb range-min" }
+                div { class: "range-thumb range-max" }
             }
         }
     }
