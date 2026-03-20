@@ -195,7 +195,10 @@ html, body, #main {
   border-radius: var(--radius-md);
   padding: 12px;
   overflow: hidden;
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .activity-header {
   font-size: 10px;
@@ -209,7 +212,8 @@ html, body, #main {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  max-height: 150px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-anchor: none;
 }

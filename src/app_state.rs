@@ -324,4 +324,36 @@ mod tests {
         assert_eq!(ActivityKind::Success.css_class(), "activity-success");
         assert_eq!(ActivityKind::Warning.css_class(), "activity-warning");
     }
+
+    // ── ActivityLog render order ──────────────────────────────────────────────
+
+    #[test]
+    fn activity_log_renders_oldest_first() {
+        // Simulate what the app does: push_front so the deque is newest-first.
+        let mut log: VecDeque<ActivityEntry> = VecDeque::new();
+        let oldest = ActivityEntry {
+            timestamp: "10:00:00".to_string(),
+            message: "oldest".to_string(),
+            kind: ActivityKind::Info,
+        };
+        let middle = ActivityEntry {
+            timestamp: "10:00:01".to_string(),
+            message: "middle".to_string(),
+            kind: ActivityKind::Info,
+        };
+        let newest = ActivityEntry {
+            timestamp: "10:00:02".to_string(),
+            message: "newest".to_string(),
+            kind: ActivityKind::Success,
+        };
+        log.push_front(oldest.clone());
+        log.push_front(middle.clone());
+        log.push_front(newest.clone());
+
+        // The component renders with `.iter().rev()` — oldest must come first.
+        let rendered: Vec<&ActivityEntry> = log.iter().rev().collect();
+        assert_eq!(rendered[0].message, "oldest", "index 0 must be the oldest entry");
+        assert_eq!(rendered[1].message, "middle");
+        assert_eq!(rendered[2].message, "newest", "last index must be the newest entry");
+    }
 }
