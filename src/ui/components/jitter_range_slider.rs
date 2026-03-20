@@ -7,19 +7,35 @@ pub fn JitterRangeSlider(
     max_secs: u64,
     on_change: EventHandler<(u64, u64)>,
 ) -> Element {
-    let display = if min_val == 0 && max_val == 0 {
+    // Local signals own the thumb positions so that dragging one thumb
+    // doesn't cause the other's value attribute to be overwritten mid-drag.
+    let mut local_min = use_signal(|| min_val);
+    let mut local_max = use_signal(|| max_val);
+
+    // Keep local state in sync when the parent pushes new prop values
+    // (e.g. after a config reload). Only update when the prop actually differs
+    // from what we have, so we don't clobber an in-progress drag.
+    if *local_min.read() != min_val {
+        local_min.set(min_val);
+    }
+    if *local_max.read() != max_val {
+        local_max.set(max_val);
+    }
+
+    let lo = *local_min.read();
+    let hi = *local_max.read();
+
+    let display = if lo == 0 && hi == 0 {
         "Off".to_string()
-    } else if min_val == max_val {
-        format!("{min_val}s")
+    } else if lo == hi {
+        format!("{lo}s")
     } else {
-        format!("{min_val}–{max_val}s")
+        format!("{lo}–{hi}s")
     };
 
-    // When both thumbs are at the same position the min thumb must sit on top
-    // so the user can drag it rightward. Otherwise max stays on top so it can
-    // be dragged leftward past min.
-    let min_z = if min_val >= max_val { 5 } else { 3 };
-    let max_z = if min_val >= max_val { 4 } else { 5 };
+    // When both thumbs coincide, put min on top so it can be dragged right.
+    let min_z = if lo >= hi { 5 } else { 3 };
+    let max_z = if lo >= hi { 4 } else { 5 };
 
     rsx! {
         div { class: "timer-card",
@@ -33,10 +49,12 @@ pub fn JitterRangeSlider(
                     style: "z-index: {min_z};",
                     min: "0",
                     max: "{max_secs}",
-                    value: "{min_val}",
+                    value: "{lo}",
                     oninput: move |e| {
                         if let Ok(v) = e.value().parse::<u64>() {
-                            on_change.call((v.min(max_val), max_val));
+                            let clamped = v.min(*local_max.read());
+                            local_min.set(clamped);
+                            on_change.call((clamped, *local_max.read()));
                         }
                     },
                 }
@@ -46,10 +64,12 @@ pub fn JitterRangeSlider(
                     style: "z-index: {max_z};",
                     min: "0",
                     max: "{max_secs}",
-                    value: "{max_val}",
+                    value: "{hi}",
                     oninput: move |e| {
                         if let Ok(v) = e.value().parse::<u64>() {
-                            on_change.call((min_val, v.max(min_val)));
+                            let clamped = v.max(*local_min.read());
+                            local_max.set(clamped);
+                            on_change.call((*local_min.read(), clamped));
                         }
                     },
                 }
