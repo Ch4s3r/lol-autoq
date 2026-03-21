@@ -9,7 +9,7 @@ use nom::{
 use reqwest::{Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use tracing::trace;
+use tracing::{debug, trace};
 
 // --------------------------------------------------------------------------
 // Lockfile
@@ -122,6 +122,7 @@ impl LcuClient {
             .text()
             .await
             .with_context(|| format!("Failed to read response body for GET {}", path))?;
+        debug!(method = "GET", %url, body = %text, "response body");
         serde_json::from_str::<T>(&text).with_context(|| {
             let preview = if text.len() > 500 {
                 format!("{}...", &text[..500])
@@ -152,6 +153,7 @@ impl LcuClient {
             let body = resp.text().await.unwrap_or_default();
             return Err(anyhow!("POST {} returned {}: {}", path, status, body));
         }
+        debug!(method = "POST", %url, %status, "response body: (empty)");
         Ok(())
     }
 
@@ -173,6 +175,7 @@ impl LcuClient {
             let body = resp.text().await.unwrap_or_default();
             return Err(anyhow!("PATCH {} returned {}: {}", path, status, body));
         }
+        debug!(method = "PATCH", %url, %status, "response body: (empty)");
         Ok(())
     }
 
