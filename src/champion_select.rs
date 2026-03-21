@@ -106,12 +106,15 @@ pub enum BanDecision {
 }
 
 /// Pure decision function for the ban phase — no I/O, fully unit-testable.
+/// `ban_elapsed_secs`: wall-clock seconds since the ban action became active.
+/// `lock_in_jitter`: seconds to wait before acting (rolled at phase start).
 pub fn decide_ban(
     session: &ChampSelectSession,
     config: &Config,
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
     hovered_ban: Option<i64>,
+    ban_elapsed_secs: f64,
     lock_in_jitter: u64,
 ) -> BanDecision {
     let action = match find_active_ban_action(session) {
@@ -166,8 +169,19 @@ pub fn decide_ban(
     }
 
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+
+    // Jitter gate: wait until enough wall-clock time has elapsed since the action started.
+    if ban_elapsed_secs < lock_in_jitter as f64 {
+        return BanDecision::WaitForTimer {
+            champion_name: chosen_name,
+            remaining_secs,
+            threshold_secs: lock_in_jitter as f64,
+        };
+    }
+
+    // Countdown gate: if a specific timer is configured, wait until enough time has run off.
     if config.lock_in_ban_secs != INSTANT {
-        let threshold = effective_threshold(config.lock_in_ban_secs, lock_in_jitter);
+        let threshold = effective_threshold(config.lock_in_ban_secs, 0);
         if remaining_secs > threshold {
             return BanDecision::WaitForTimer {
                 champion_name: chosen_name,
@@ -193,9 +207,10 @@ pub async fn handle_ban_phase(
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
     hovered_ban: &mut Option<i64>,
+    ban_elapsed_secs: f64,
     lock_in_jitter: u64,
 ) -> Result<bool> {
-    match decide_ban(session, config, champion_map, display_names, *hovered_ban, lock_in_jitter) {
+    match decide_ban(session, config, champion_map, display_names, *hovered_ban, ban_elapsed_secs, lock_in_jitter) {
         BanDecision::Idle => Ok(false),
         BanDecision::NoBansConfigured => {
             warn!("no ban preferences configured — add some via `lol-autoq configure`");
@@ -344,13 +359,17 @@ pub enum PickDecision {
 }
 
 /// Pure decision function for the pick phase — no I/O, fully unit-testable.
+/// `hover_elapsed_secs`: wall-clock seconds since the pick action was first seen.
+/// `pick_elapsed_secs`: wall-clock seconds since our pick turn became active.
 pub fn decide_pick(
     session: &ChampSelectSession,
     config: &Config,
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
     hovered_pick: Option<(i64, i64)>,
+    hover_elapsed_secs: f64,
     hover_jitter: u64,
+    pick_elapsed_secs: f64,
     pick_jitter: u64,
 ) -> PickDecision {
     let action = match find_pick_action(session) {
@@ -376,8 +395,19 @@ pub fn decide_pick(
 
     if hovered_pick != Some((action.id, chosen_id)) {
         let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+
+        // Jitter gate for hover.
+        if hover_elapsed_secs < hover_jitter as f64 {
+            return PickDecision::WaitForHoverTimer {
+                champion_name: chosen_name,
+                remaining_secs,
+                threshold_secs: hover_jitter as f64,
+            };
+        }
+
+        // Countdown gate for hover (only when not INSTANT).
         if config.hover_pick_secs != INSTANT {
-            let threshold = effective_threshold(config.hover_pick_secs, hover_jitter);
+            let threshold = effective_threshold(config.hover_pick_secs, 0);
             if remaining_secs > threshold {
                 return PickDecision::WaitForHoverTimer {
                     champion_name: chosen_name,
@@ -386,6 +416,7 @@ pub fn decide_pick(
                 };
             }
         }
+
         return PickDecision::Hover {
             action_id: action.id,
             champion_id: chosen_id,
@@ -401,8 +432,15 @@ pub fn decide_pick(
     }
 
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+
+    // Jitter gate for lock-in.
+    if pick_elapsed_secs < pick_jitter as f64 {
+        return PickDecision::WaitForLockIn;
+    }
+
+    // Countdown gate for lock-in (only when not INSTANT).
     if config.lock_in_pick_secs != INSTANT {
-        let threshold = effective_threshold(config.lock_in_pick_secs, pick_jitter);
+        let threshold = effective_threshold(config.lock_in_pick_secs, 0);
         if remaining_secs > threshold {
             return PickDecision::WaitForLockIn;
         }
@@ -433,11 +471,13 @@ pub async fn handle_champion_select(
     champion_map: &HashMap<String, i64>,
     display_names: &HashMap<i64, String>,
     hovered_pick: &mut Option<(i64, i64)>,
+    hover_elapsed_secs: f64,
     hover_jitter: u64,
+    pick_elapsed_secs: f64,
     pick_jitter: u64,
 ) -> Result<bool> {
     let prefs_for_log = config.champions_for_position(local_assigned_position(session)).join(" -> ");
-    match decide_pick(session, config, champion_map, display_names, *hovered_pick, hover_jitter, pick_jitter) {
+    match decide_pick(session, config, champion_map, display_names, *hovered_pick, hover_elapsed_secs, hover_jitter, pick_elapsed_secs, pick_jitter) {
         PickDecision::Idle => Ok(false),
         PickDecision::NoPrefsConfigured { position } => {
             warn!(position = %position, "no champion preferences configured — please edit config.toml");
@@ -781,14 +821,14 @@ mod tests {
     fn decide_ban_idle_when_no_active_ban_action() {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = make_session(3, vec![], vec![], Bans::default(), "BAN_PICK");
-        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0), BanDecision::Idle);
+        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None, 999.0, 0), BanDecision::Idle);
     }
 
     #[test]
     fn decide_ban_idle_during_planning_phase() {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = session_with_ban_action(3, "PLANNING", 20_000);
-        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0), BanDecision::Idle);
+        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None, 999.0, 0), BanDecision::Idle);
     }
 
     #[test]
@@ -797,7 +837,7 @@ mod tests {
         let session = session_with_ban_action(3, "BAN_PICK", 20_000);
         let mut cfg = Config::default();
         cfg.bans = vec![];
-        assert_eq!(decide_ban(&session, &cfg, &lookup, &display, None, 0), BanDecision::NoBansConfigured);
+        assert_eq!(decide_ban(&session, &cfg, &lookup, &display, None, 999.0, 0), BanDecision::NoBansConfigured);
     }
 
     #[test]
@@ -809,14 +849,14 @@ mod tests {
         // Ahri already banned
         let mut s = session;
         s.bans.my_team_bans = vec![1];
-        assert_eq!(decide_ban(&s, &cfg, &lookup, &display, None, 0), BanDecision::AllBansExhausted);
+        assert_eq!(decide_ban(&s, &cfg, &lookup, &display, None, 999.0, 0), BanDecision::AllBansExhausted);
     }
 
     #[test]
     fn decide_ban_hover_when_not_yet_hovered() {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = session_with_ban_action(3, "BAN_PICK", 20_000);
-        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 999.0, 0);
         assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
     }
 
@@ -826,7 +866,7 @@ mod tests {
         let session = session_with_ban_action(3, "BAN_PICK", 20_000); // 20s remaining
         let mut cfg = default_ban_config();
         cfg.lock_in_ban_secs = 5; // threshold = 5s
-        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 0);
+        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 999.0, 0);
         assert!(matches!(result, BanDecision::WaitForTimer { .. }));
     }
 
@@ -836,7 +876,7 @@ mod tests {
         let session = session_with_ban_action(3, "BAN_PICK", 3_000); // 3s remaining
         let mut cfg = default_ban_config();
         cfg.lock_in_ban_secs = 5; // threshold 5s → 3s <= 5s → lock in
-        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 0);
+        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 999.0, 0);
         assert_eq!(result, BanDecision::LockIn {
             action_id: 10,
             champion_id: 1,
@@ -847,12 +887,29 @@ mod tests {
 
     #[test]
     fn decide_ban_instant_skips_timer_check() {
+        // INSTANT + jitter=0 + elapsed=999s → lock in immediately regardless of countdown.
         let (lookup, display) = build_champion_map(&make_summaries());
-        let session = session_with_ban_action(3, "BAN_PICK", 999_000); // huge time remaining
+        let session = session_with_ban_action(3, "BAN_PICK", 999_000);
         let mut cfg = default_ban_config();
         cfg.lock_in_ban_secs = crate::config::INSTANT;
-        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 0);
+        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 999.0, 0);
         assert!(matches!(result, BanDecision::LockIn { .. }));
+    }
+
+    #[test]
+    fn decide_ban_instant_with_jitter_waits_then_locks_in() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = default_ban_config();
+        cfg.lock_in_ban_secs = crate::config::INSTANT;
+
+        // elapsed=2s < jitter=5s → still waiting
+        let session = session_with_ban_action(3, "BAN_PICK", 999_000);
+        let result = decide_ban(&session, &cfg, &lookup, &display, Some(1), 2.0, 5);
+        assert!(matches!(result, BanDecision::WaitForTimer { .. }));
+
+        // elapsed=6s >= jitter=5s → lock in
+        let result2 = decide_ban(&session, &cfg, &lookup, &display, Some(1), 6.0, 5);
+        assert!(matches!(result2, BanDecision::LockIn { .. }));
     }
 
     // ── decide_pick ───────────────────────────────────────────────────────────
@@ -885,14 +942,15 @@ mod tests {
     fn decide_pick_idle_when_no_pick_action() {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = make_session(3, vec![], vec![], Bans::default(), "BAN_PICK");
-        assert_eq!(decide_pick(&session, &default_pick_config(), &lookup, &display, None, 0, 0), PickDecision::Idle);
+        assert_eq!(decide_pick(&session, &default_pick_config(), &lookup, &display, None, 999.0, 0, 999.0, 0), PickDecision::Idle);
     }
 
     #[test]
     fn decide_pick_hover_immediately_when_not_yet_hovered() {
+        // hover_pick_secs=INSTANT + jitter=0 → threshold=0 → hover when remaining≤0
         let (lookup, display) = build_champion_map(&make_summaries());
-        let session = session_with_pick_action(3, "middle", false, 20_000, Bans::default());
-        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None, 0, 0);
+        let session = session_with_pick_action(3, "middle", false, 0, Bans::default());
+        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None, 999.0, 0, 999.0, 0);
         assert_eq!(result, PickDecision::Hover {
             action_id: 20,
             champion_id: 1,
@@ -907,7 +965,7 @@ mod tests {
         let session = session_with_pick_action(3, "middle", false, 30_000, Bans::default());
         let mut cfg = default_pick_config();
         cfg.hover_pick_secs = 5; // hover only when <= 5s remain; 30s > 5s → wait
-        let result = decide_pick(&session, &cfg, &lookup, &display, None, 0, 0);
+        let result = decide_pick(&session, &cfg, &lookup, &display, None, 999.0, 0, 999.0, 0);
         assert!(matches!(result, PickDecision::WaitForHoverTimer { .. }));
     }
 
@@ -916,7 +974,7 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         // is_in_progress = false → not our turn yet
         let session = session_with_pick_action(3, "middle", false, 20_000, Bans::default());
-        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, Some((20, 1)), 0, 0);
+        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, Some((20, 1)), 999.0, 0, 999.0, 0);
         assert_eq!(result, PickDecision::WaitForLockIn);
     }
 
@@ -926,7 +984,7 @@ mod tests {
         let session = session_with_pick_action(3, "middle", true, 20_000, Bans::default());
         let mut cfg = default_pick_config();
         cfg.lock_in_pick_secs = 5; // 20s remaining > 5s threshold
-        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 999.0, 0, 999.0, 0);
         assert_eq!(result, PickDecision::WaitForLockIn);
     }
 
@@ -936,7 +994,7 @@ mod tests {
         let session = session_with_pick_action(3, "middle", true, 3_000, Bans::default());
         let mut cfg = default_pick_config();
         cfg.lock_in_pick_secs = 5; // 3s <= 5s → lock in
-        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 999.0, 0, 999.0, 0);
         assert_eq!(result, PickDecision::LockIn {
             action_id: 20,
             champion_id: 1,
@@ -963,7 +1021,7 @@ mod tests {
         // decide_pick_re_hovers_when_hovered_champion_picked_by_enemy, where unavailable_champion_ids
         // now includes completed non-local pick actions, causing best_pick_target to skip Ahri and
         // return Zed, which triggers a re-hover before we even reach the StaleHover check.
-        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 999.0, 0, 999.0, 0);
         assert_eq!(result, PickDecision::AllPicksExhausted { position: "Mid".into() });
     }
 
@@ -983,11 +1041,11 @@ mod tests {
             Bans::default(),
             "BAN_PICK",
         );
-        session.timer.adjusted_time_left_ms = 20_000;
+        session.timer.adjusted_time_left_ms = 0; // INSTANT+jitter=0 → threshold=0 → hover immediately
         // Config: primary = Ahri, secondary = Zed
         let cfg = default_pick_config(); // mid = ["Ahri", "Zed"], hover_pick_secs = INSTANT
         // We previously hovered Ahri (action_id=20, champion_id=1)
-        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 999.0, 0, 999.0, 0);
         // Ahri is now unavailable (picked by enemy) → bot should re-hover Zed
         assert_eq!(result, PickDecision::Hover {
             action_id: 20,
@@ -1002,18 +1060,35 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         let bans = Bans { my_team_bans: vec![1, 2], their_team_bans: vec![] };
         let session = session_with_pick_action(3, "middle", true, 3_000, bans);
-        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None, 0, 0);
+        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None, 999.0, 0, 999.0, 0);
         assert_eq!(result, PickDecision::AllPicksExhausted { position: "Mid".into() });
     }
 
     #[test]
     fn decide_pick_instant_lock_skips_timer_check() {
+        // INSTANT + jitter=0 + elapsed=999s → lock in regardless of countdown.
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = session_with_pick_action(3, "middle", true, 999_000, Bans::default());
         let mut cfg = default_pick_config();
         cfg.lock_in_pick_secs = crate::config::INSTANT;
-        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 0, 0);
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 999.0, 0, 999.0, 0);
         assert!(matches!(result, PickDecision::LockIn { .. }));
+    }
+
+    #[test]
+    fn decide_pick_instant_with_jitter_waits_then_locks_in() {
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let mut cfg = default_pick_config();
+        cfg.lock_in_pick_secs = crate::config::INSTANT;
+        let session = session_with_pick_action(3, "middle", true, 999_000, Bans::default());
+
+        // elapsed=2s < jitter=5s → still waiting
+        let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 999.0, 0, 2.0, 5);
+        assert!(matches!(result, PickDecision::WaitForLockIn));
+
+        // elapsed=6s >= jitter=5s → lock in
+        let result2 = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)), 999.0, 0, 6.0, 5);
+        assert!(matches!(result2, PickDecision::LockIn { .. }));
     }
 
     #[test]
@@ -1089,7 +1164,7 @@ mod tests {
         let their_ban  = make_action_with_champ(11, 1, "ban", true, false, 1);
         let member     = make_member(3, "mid", 0);
         let session    = make_session(3, vec![vec![my_ban, their_ban]], vec![member], Bans::default(), "BAN_PICK");
-        let result     = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        let result     = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 999.0, 0);
         // Should hover Zed (id=2) instead of Ahri
         assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 2, champion_name: "Zed".into() });
     }
@@ -1103,7 +1178,7 @@ mod tests {
         let ban_zed   = make_action_with_champ(12, 2, "ban", true, false, 2);
         let member    = make_member(3, "mid", 0);
         let session   = make_session(3, vec![vec![my_ban, ban_ahri, ban_zed]], vec![member], Bans::default(), "BAN_PICK");
-        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 999.0, 0);
         assert_eq!(result, BanDecision::AllBansExhausted);
     }
 
@@ -1115,7 +1190,7 @@ mod tests {
         let member = make_member(3, "mid", 0);
         let session = make_session(3, vec![vec![my_ban]], vec![member], Bans::default(), "BAN_PICK");
         // hovered_ban = Some(1): we've already hovered Ahri and have plenty of time
-        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, Some(1), 0);
+        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, Some(1), 999.0, 0);
         // Should wait for timer (20s remain > 5s threshold) — not skip Ahri
         assert!(matches!(result, BanDecision::WaitForTimer { .. }));
     }
@@ -1128,7 +1203,7 @@ mod tests {
         let their_ban = make_action_with_champ(11, 1, "ban", true, false, 0);
         let member    = make_member(3, "mid", 0);
         let session   = make_session(3, vec![vec![my_ban, their_ban]], vec![member], Bans::default(), "BAN_PICK");
-        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 0);
+        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None, 999.0, 0);
         // Ahri should still be the first choice since the teammate hasn't hovered anything
         assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
     }

@@ -159,6 +159,10 @@ async fn inner_poll_loop(
     let mut hover_jitter: u64 = 0;
     let mut pick_jitter: u64 = 0;
     let mut queue_jitter: u64 = 0;
+    // Wall-clock start times for each action — jitter is measured as elapsed time.
+    let mut ban_started_at: Option<Instant> = None;
+    let mut hover_started_at: Option<Instant> = None;
+    let mut pick_started_at: Option<Instant> = None;
 
     loop {
         // Drain tracing events into the UI activity log (keeps file and UI in sync).
@@ -181,6 +185,9 @@ async fn inner_poll_loop(
             hovered_ban = None;
             hovered_pick = None;
             state.hovered_champion.set(None);
+            ban_started_at = None;
+            hover_started_at = None;
+            pick_started_at = None;
 
             let cfg = state.config.read();
             ban_jitter   = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
@@ -221,6 +228,8 @@ async fn inner_poll_loop(
                     // Pick handling
                     if !champ_locked {
                         let prev_hover = hovered_pick;
+                        let hover_elapsed = hover_started_at.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
+                        let pick_elapsed  = pick_started_at.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
                         if let Ok(locked) = handle_champion_select(
                             client,
                             &session,
@@ -228,7 +237,9 @@ async fn inner_poll_loop(
                             champion_map,
                             display_names,
                             &mut hovered_pick,
+                            hover_elapsed,
                             hover_jitter,
+                            pick_elapsed,
                             pick_jitter,
                         )
                         .await {
@@ -251,6 +262,7 @@ async fn inner_poll_loop(
                     // Ban handling
                     if !ban_completed {
                         let prev_ban = hovered_ban;
+                        let ban_elapsed = ban_started_at.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
                         match handle_ban_phase(
                             client,
                             &session,
@@ -258,6 +270,7 @@ async fn inner_poll_loop(
                             champion_map,
                             display_names,
                             &mut hovered_ban,
+                            ban_elapsed,
                             ban_jitter,
                         )
                         .await
