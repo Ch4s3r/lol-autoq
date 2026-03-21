@@ -1,3 +1,4 @@
+pub mod action_timeline;
 pub mod activity_log;
 pub mod champion_picker;
 pub mod champion_tile;

@@ -617,4 +617,143 @@ input[type=checkbox] {
   from { opacity: 1; }
   to   { opacity: 0; pointer-events: none; }
 }
+
+/* ── Action Timeline ────────────────────────────────────────────────── */
+.timeline-panel {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: fade-in 0.25s ease;
+}
+
+.timeline-header {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.timeline-phase-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.timeline-sub-phase {
+  font-size: 12px;
+  color: var(--on-surf-var);
+  font-weight: 600;
+}
+
+.timeline-countdown {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 20px;
+  background: rgba(208,188,255,0.12);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(208,188,255,0.2);
+  min-width: 36px;
+  justify-content: center;
+}
+
+.timeline-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Base card */
+.timeline-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--outline);
+  background: var(--surf-var);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.timeline-card-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.timeline-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-card-type {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.timeline-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-timer-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(208,188,255,0.10);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(208,188,255,0.18);
+  flex-shrink: 0;
+  min-width: 32px;
+  justify-content: center;
+}
+
+/* Modifier: active (it's our turn) */
+.timeline-card--active {
+  border-color: rgba(208,188,255,0.35);
+  background: rgba(208,188,255,0.06);
+}
+.timeline-card--active .timeline-card-icon { color: var(--primary); }
+.timeline-card--active .timeline-card-label { color: var(--primary); }
+
+/* Modifier: done (ban/pick completed) */
+.timeline-card--done {
+  border-color: rgba(168,213,162,0.35);
+  background: rgba(168,213,162,0.06);
+}
+.timeline-card--done .timeline-card-icon { color: var(--success); }
+.timeline-card--done .timeline-card-label { color: var(--success); }
+
+/* Modifier: muted (no config / exhausted) */
+.timeline-card--muted .timeline-card-icon { color: var(--muted); }
+.timeline-card--muted .timeline-card-label { color: var(--muted); font-style: italic; }
+
+/* Modifier: idle */
+.timeline-card--idle .timeline-card-icon { color: var(--muted); }
+.timeline-card--idle .timeline-card-label { color: var(--muted); font-style: italic; }
 "#;

@@ -148,6 +148,40 @@ impl ActivityKind {
 }
 
 // ---------------------------------------------------------------------------
+// Champ-select live status
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BanStatus {
+    Idle,
+    NoBansConfigured,
+    AllBansExhausted,
+    WaitingToLock { champion_name: String },
+    Hovering      { champion_name: String },
+    Banned        { champion_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PickStatus {
+    Idle,
+    NoPrefsConfigured { position: String },
+    AllPicksExhausted { position: String },
+    WaitingToHover    { champion_name: String },
+    Hovering          { champion_name: String },
+    LockedIn          { champion_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChampSelectStatus {
+    /// Seconds left in the LCU sub-phase (adjusted_time_left_ms / 1000).
+    pub time_left_secs: f64,
+    /// LCU sub-phase string: "PLANNING", "BAN_PICK", "FINALIZATION", "".
+    pub sub_phase: String,
+    pub ban:  BanStatus,
+    pub pick: PickStatus,
+}
+
+// ---------------------------------------------------------------------------
 // Shared app state (bundle of signals)
 // ---------------------------------------------------------------------------
 
@@ -160,6 +194,7 @@ pub struct AppState {
     pub champion_summaries: Signal<Vec<ChampionSummary>>,
     pub hovered_champion: Signal<Option<String>>,
     pub ddragon_version: Signal<String>,
+    pub champ_select_status: Signal<Option<ChampSelectStatus>>,
 }
 
 impl AppState {
@@ -173,6 +208,7 @@ impl AppState {
             champion_summaries: Signal::new(Vec::new()),
             hovered_champion: Signal::new(None),
             ddragon_version: Signal::new("15.7.1".to_string()),
+            champ_select_status: Signal::new(None),
         }
     }
 
@@ -355,5 +391,39 @@ mod tests {
         assert_eq!(rendered[0].message, "oldest", "index 0 must be the oldest entry");
         assert_eq!(rendered[1].message, "middle");
         assert_eq!(rendered[2].message, "newest", "last index must be the newest entry");
+    }
+
+    // ── BanStatus / PickStatus ────────────────────────────────────────────────
+
+    #[test]
+    fn ban_status_variants_implement_clone_and_partialeq() {
+        let variants = vec![
+            BanStatus::Idle,
+            BanStatus::NoBansConfigured,
+            BanStatus::AllBansExhausted,
+            BanStatus::WaitingToLock { champion_name: "Zed".into() },
+            BanStatus::Hovering      { champion_name: "Yasuo".into() },
+            BanStatus::Banned        { champion_name: "Yone".into() },
+        ];
+        for v in &variants {
+            assert_eq!(v, &v.clone());
+        }
+        assert_ne!(BanStatus::Idle, BanStatus::NoBansConfigured);
+    }
+
+    #[test]
+    fn pick_status_variants_implement_clone_and_partialeq() {
+        let variants = vec![
+            PickStatus::Idle,
+            PickStatus::NoPrefsConfigured { position: "Mid".into() },
+            PickStatus::AllPicksExhausted { position: "Bot".into() },
+            PickStatus::WaitingToHover    { champion_name: "Jinx".into() },
+            PickStatus::Hovering          { champion_name: "Ahri".into() },
+            PickStatus::LockedIn          { champion_name: "Lux".into() },
+        ];
+        for v in &variants {
+            assert_eq!(v, &v.clone());
+        }
+        assert_ne!(PickStatus::Idle, PickStatus::NoPrefsConfigured { position: "Top".into() });
     }
 }

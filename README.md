@@ -23,6 +23,39 @@ Features a **Dioxus desktop GUI** with a Material Design 3 dark theme.
 
 ---
 
+## Action Timeline
+
+During **Champion Select** the dashboard replaces the activity log with a live **Action Timeline**: two cards showing the current ban and pick status, plus a countdown timer.
+
+```
+┌ ACTIONS ───────────────────────────────────────────┐
+│  Ban / Pick                              30s        │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  🚫  Ban    Hovering: Zed             30s   │   │
+│  └─────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  ✨  Pick   Hovering: Jinx            30s   │   │
+│  └─────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────┘
+```
+
+Each card shows one of these states:
+
+| State | Description |
+|---|---|
+| Waiting… | No active action yet |
+| No bans/prefs configured | Config is empty for this slot |
+| All bans/picks exhausted | Every preferred champion is banned or picked |
+| Hovering: *Champion* | Currently hovering the champion |
+| Locking: *Champion* | Hovering and waiting for the lock-in threshold |
+| Banned / Locked in: *Champion* | Action completed |
+
+The countdown pill on each card is only shown when an action is actively in progress (i.e. it's your turn to ban or pick).
+
+Once Champion Select ends the activity log returns automatically.
+
+---
+
 ## Requirements
 
 - League of Legends installed and running on **Windows**

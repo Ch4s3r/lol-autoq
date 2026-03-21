@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, GamePhase};
 use super::components::{
+    action_timeline::ActionTimeline,
     activity_log::ActivityLog,
     phase_card::PhaseCard,
 };
@@ -22,6 +23,7 @@ pub fn Dashboard() -> Element {
     let phase = state.phase.read().clone();
     let activities: Vec<_> = state.activities.read().iter().cloned().collect();
     let hovered = state.hovered_champion.read().clone();
+    let champ_select_status = state.champ_select_status.read().clone();
 
     rsx! {
         div { class: "content",
@@ -33,12 +35,16 @@ pub fn Dashboard() -> Element {
 
             // Phase card
             PhaseCard {
-                phase: phase,
+                phase: phase.clone(),
                 hovered_champion: hovered,
             }
 
-            // Activity log
-            ActivityLog { entries: activities }
+            // Action Timeline during Champion Select, Activity Log otherwise
+            if let (GamePhase::ChampSelect, Some(status)) = (&phase, champ_select_status) {
+                ActionTimeline { status: status }
+            } else {
+                ActivityLog { entries: activities }
+            }
         }
     }
 }
