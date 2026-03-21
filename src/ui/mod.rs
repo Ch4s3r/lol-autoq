@@ -155,14 +155,6 @@ async fn inner_poll_loop(
     let mut champ_locked = false;
     let mut hovered_ban: Option<i64> = None;
     let mut hovered_pick: Option<(i64, i64)> = None;
-    let mut ban_jitter: u64 = 0;
-    let mut hover_jitter: u64 = 0;
-    let mut pick_jitter: u64 = 0;
-    let mut queue_jitter: u64 = 0;
-    // Wall-clock start times for each action — jitter is measured as elapsed time.
-    let mut ban_started_at: Option<Instant> = None;
-    let mut hover_started_at: Option<Instant> = None;
-    let mut pick_started_at: Option<Instant> = None;
 
     loop {
         // Drain tracing events into the UI activity log (keeps file and UI in sync).
@@ -185,15 +177,7 @@ async fn inner_poll_loop(
             hovered_ban = None;
             hovered_pick = None;
             state.hovered_champion.set(None);
-            ban_started_at = None;
-            hover_started_at = None;
-            pick_started_at = None;
 
-            let cfg = state.config.read();
-            ban_jitter   = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
-            hover_jitter = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
-            pick_jitter  = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
-            queue_jitter = roll_jitter(cfg.jitter_min_secs, cfg.jitter_max_secs);
         }
 
         let cfg: Config = state.config.read().clone();
@@ -201,13 +185,9 @@ async fn inner_poll_loop(
         match phase.as_str() {
             "ReadyCheck" => {
                 if !ready_check_accepted {
-                    let effective_delay = if cfg.accept_queue_delay_secs == INSTANT {
-                        queue_jitter
-                    } else {
-                        cfg.accept_queue_delay_secs.saturating_add(queue_jitter)
-                    };
+                    let delay = cfg.accept_queue_delay_secs;
                     let seen_at = ready_check_seen_at.get_or_insert_with(Instant::now);
-                    if seen_at.elapsed() >= Duration::from_secs(effective_delay)
+                    if (delay == INSTANT || seen_at.elapsed() >= Duration::from_secs(delay))
                         && client.accept_ready_check().await.is_ok() {
                             state.push_activity("Queue accepted!", ActivityKind::Success);
                             ready_check_accepted = true;
@@ -228,8 +208,6 @@ async fn inner_poll_loop(
                     // Pick handling
                     if !champ_locked {
                         let prev_hover = hovered_pick;
-                        let hover_elapsed = hover_started_at.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
-                        let pick_elapsed  = pick_started_at.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
                         if let Ok(locked) = handle_champion_select(
                             client,
                             &session,
@@ -237,10 +215,6 @@ async fn inner_poll_loop(
                             champion_map,
                             display_names,
                             &mut hovered_pick,
-                            hover_elapsed,
-                            hover_jitter,
-                            pick_elapsed,
-                            pick_jitter,
                         )
                         .await {
                             if hovered_pick != prev_hover
@@ -262,7 +236,6 @@ async fn inner_poll_loop(
                     // Ban handling
                     if !ban_completed {
                         let prev_ban = hovered_ban;
-                        let ban_elapsed = ban_started_at.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
                         match handle_ban_phase(
                             client,
                             &session,
@@ -270,8 +243,6 @@ async fn inner_poll_loop(
                             champion_map,
                             display_names,
                             &mut hovered_ban,
-                            ban_elapsed,
-                            ban_jitter,
                         )
                         .await
                         {
@@ -302,14 +273,6 @@ async fn inner_poll_loop(
     }
 }
 
-pub(crate) fn roll_jitter(min_secs: u64, max_secs: u64) -> u64 {
-    if max_secs == 0 {
-        return 0;
-    }
-    let lo = min_secs.min(max_secs);
-    rand::random_range(lo..=max_secs)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,39 +295,6 @@ mod tests {
     fn poll_interval_active_phases_are_100ms() {
         for phase in &["ReadyCheck", "ChampSelect", "Lobby", "None", "Matchmaking", ""] {
             assert_eq!(poll_interval(phase), Duration::from_millis(100), "failed for phase {phase:?}");
-        }
-    }
-
-    // ── roll_jitter ───────────────────────────────────────────────────────────
-
-    #[test]
-    fn roll_jitter_zero_max_always_returns_zero() {
-        for _ in 0..100 {
-            assert_eq!(roll_jitter(0, 0), 0);
-        }
-    }
-
-    #[test]
-    fn roll_jitter_result_within_range() {
-        for _ in 0..200 {
-            let j = roll_jitter(0, 10);
-            assert!(j <= 10, "jitter {j} exceeded max of 10");
-        }
-    }
-
-    #[test]
-    fn roll_jitter_min_equals_max_returns_that_value() {
-        for _ in 0..50 {
-            assert_eq!(roll_jitter(7, 7), 7);
-        }
-    }
-
-    #[test]
-    fn roll_jitter_result_at_least_min() {
-        for _ in 0..200 {
-            let j = roll_jitter(3, 10);
-            assert!(j >= 3, "jitter {j} was below min of 3");
-            assert!(j <= 10, "jitter {j} exceeded max of 10");
         }
     }
 }
