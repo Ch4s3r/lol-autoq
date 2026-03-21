@@ -197,86 +197,84 @@ async fn inner_poll_loop(
             }
 
             "ChampSelect" => {
-                if !ban_completed || !champ_locked {
-                    let session = match client.get_champ_select_session().await {
-                        Ok(s) => s,
-                        Err(_) => {
-                            sleep(POLL_ACTIVE).await;
-                            continue;
-                        }
-                    };
+                let session = match client.get_champ_select_session().await {
+                    Ok(s) => s,
+                    Err(_) => {
+                        sleep(POLL_ACTIVE).await;
+                        continue;
+                    }
+                };
 
-                    // Pick handling
-                    if !champ_locked {
-                        let prev_hover = hovered_pick;
-                        if let Ok(locked) = handle_champion_select(
-                            client,
-                            &session,
-                            &cfg,
-                            champion_map,
-                            display_names,
-                            &mut hovered_pick,
-                        )
-                        .await {
-                            if hovered_pick != prev_hover
-                                && let Some((_, id)) = hovered_pick {
-                                    let name = display_names.get(&id).cloned().unwrap_or_default();
-                                    state.hovered_champion.set(Some(name.clone()));
-                                    state.push_activity(format!("Hovering pick: {name}"), ActivityKind::Info);
-                                }
-                            if locked {
-                                champ_locked = true;
-                                if let Some((_, id)) = hovered_pick {
-                                    let name = display_names.get(&id).cloned().unwrap_or_default();
-                                    state.push_activity(format!("Locked in: {name}"), ActivityKind::Success);
-                                }
+                // Pick handling
+                if !champ_locked {
+                    let prev_hover = hovered_pick;
+                    if let Ok(locked) = handle_champion_select(
+                        client,
+                        &session,
+                        &cfg,
+                        champion_map,
+                        display_names,
+                        &mut hovered_pick,
+                    )
+                    .await {
+                        if hovered_pick != prev_hover
+                            && let Some((_, id)) = hovered_pick {
+                                let name = display_names.get(&id).cloned().unwrap_or_default();
+                                state.hovered_champion.set(Some(name.clone()));
+                                state.push_activity(format!("Hovering pick: {name}"), ActivityKind::Info);
+                            }
+                        if locked {
+                            champ_locked = true;
+                            if let Some((_, id)) = hovered_pick {
+                                let name = display_names.get(&id).cloned().unwrap_or_default();
+                                state.push_activity(format!("Locked in: {name}"), ActivityKind::Success);
                             }
                         }
                     }
-
-                    // Ban handling
-                    if !ban_completed {
-                        let prev_ban = hovered_ban;
-                        match handle_ban_phase(
-                            client,
-                            &session,
-                            &cfg,
-                            champion_map,
-                            display_names,
-                            &mut hovered_ban,
-                        )
-                        .await
-                        {
-                            Ok(true) => {
-                                if let Some(id) = hovered_ban {
-                                    let name = display_names.get(&id).cloned().unwrap_or_default();
-                                    state.push_activity(format!("Banned: {name}"), ActivityKind::Success);
-                                }
-                                ban_completed = true;
-                            }
-                            Ok(false) => {
-                                if hovered_ban != prev_ban
-                                    && let Some(id) = hovered_ban {
-                                        let name = display_names.get(&id).cloned().unwrap_or_default();
-                                        state.push_activity(format!("Hovering ban: {name}"), ActivityKind::Info);
-                                    }
-                            }
-                            Err(_) => {}
-                        }
-                    }
-
-                    // Update live champ-select status signal
-                    let time_left_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
-                    let sub_phase      = session.timer.phase.clone();
-                    let ban_status     = derive_ban_status(&session, &cfg, champion_map, display_names, hovered_ban, ban_completed);
-                    let pick_status    = derive_pick_status(&session, &cfg, champion_map, display_names, hovered_pick, champ_locked);
-                    state.champ_select_status.set(Some(ChampSelectStatus {
-                        time_left_secs,
-                        sub_phase,
-                        ban:  ban_status,
-                        pick: pick_status,
-                    }));
                 }
+
+                // Ban handling
+                if !ban_completed {
+                    let prev_ban = hovered_ban;
+                    match handle_ban_phase(
+                        client,
+                        &session,
+                        &cfg,
+                        champion_map,
+                        display_names,
+                        &mut hovered_ban,
+                    )
+                    .await
+                    {
+                        Ok(true) => {
+                            if let Some(id) = hovered_ban {
+                                let name = display_names.get(&id).cloned().unwrap_or_default();
+                                state.push_activity(format!("Banned: {name}"), ActivityKind::Success);
+                            }
+                            ban_completed = true;
+                        }
+                        Ok(false) => {
+                            if hovered_ban != prev_ban
+                                && let Some(id) = hovered_ban {
+                                    let name = display_names.get(&id).cloned().unwrap_or_default();
+                                    state.push_activity(format!("Hovering ban: {name}"), ActivityKind::Info);
+                                }
+                        }
+                        Err(_) => {}
+                    }
+                }
+
+                // Update live champ-select status signal (always, to keep countdown live)
+                let time_left_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+                let sub_phase      = session.timer.phase.clone();
+                let ban_status     = derive_ban_status(&session, &cfg, champion_map, display_names, hovered_ban, ban_completed);
+                let pick_status    = derive_pick_status(&session, &cfg, champion_map, display_names, hovered_pick, champ_locked);
+                state.champ_select_status.set(Some(ChampSelectStatus {
+                    time_left_secs,
+                    sub_phase,
+                    ban:  ban_status,
+                    pick: pick_status,
+                }));
             }
 
             _ => {}
