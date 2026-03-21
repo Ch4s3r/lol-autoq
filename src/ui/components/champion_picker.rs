@@ -65,8 +65,10 @@ pub fn ChampionPickerModal(
                         if e.key() == Key::Enter {
                             if let Some(name) = first_name.clone() {
                                 on_toggle.call(name);
-                                on_close.call(());
+                                query.set(String::new());
                             }
+                        } else if e.key() == Key::Escape {
+                            on_close.call(());
                         }
                     },
                 }
@@ -86,11 +88,7 @@ pub fn ChampionPickerModal(
                                 ddragon_version: version.clone(),
                                 selected: is_selected,
                                 on_click: move |name: String| {
-                                    let adding = !is_selected;
                                     on_toggle.call(name);
-                                    if adding {
-                                        on_close.call(());
-                                    }
                                 },
                             }
                         }
