@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use std::time::{Duration, Instant};
 
 use crate::app_state::{BanStatus, ChampSelectStatus, HoverStatus, PickStatus};
 
@@ -152,7 +153,35 @@ fn PickCard(status: PickStatus, time_left_secs: f64) -> Element {
 
 #[component]
 pub fn ActionTimeline(status: ChampSelectStatus) -> Element {
-    let secs = status.time_left_secs.ceil() as u64;
+    // Local wall-clock countdown: seeded from the LCU value whenever it changes,
+    // then ticked every 100 ms independently so the display keeps moving even if
+    // the LCU timer freezes (e.g. after pick/ban complete).
+    let mut display_secs = use_signal(|| status.time_left_secs);
+    let mut seed = use_signal(|| (status.time_left_secs, Instant::now()));
+
+    // Re-seed whenever the LCU gives us a new value.
+    let lcu_secs = status.time_left_secs;
+    use_effect(move || {
+        let (prev, _) = *seed.read();
+        if (lcu_secs - prev).abs() > 0.5 {
+            seed.set((lcu_secs, Instant::now()));
+            display_secs.set(lcu_secs);
+        }
+    });
+
+    // Tick every 100 ms, counting down from the seeded value using wall time.
+    use_coroutine(move |_: UnboundedReceiver<()>| async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let (base, at) = *seed.read();
+            let elapsed = at.elapsed().as_secs_f64();
+            let remaining = (base - elapsed).max(0.0);
+            display_secs.set(remaining);
+        }
+    });
+
+    let secs = display_secs.read().ceil() as u64;
+    let time_left = *display_secs.read();
 
     rsx! {
         div { class: "timeline-panel",
@@ -162,9 +191,9 @@ pub fn ActionTimeline(status: ChampSelectStatus) -> Element {
                 span { class: "timeline-countdown", "{secs}s" }
             }
             div { class: "timeline-cards",
-                HoverCard { status: status.hover, time_left_secs: status.time_left_secs }
-                BanCard   { status: status.ban,   time_left_secs: status.time_left_secs }
-                PickCard  { status: status.pick,  time_left_secs: status.time_left_secs }
+                HoverCard { status: status.hover, time_left_secs: time_left }
+                BanCard   { status: status.ban,   time_left_secs: time_left }
+                PickCard  { status: status.pick,  time_left_secs: time_left }
             }
         }
     }
