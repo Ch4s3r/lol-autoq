@@ -17,6 +17,8 @@ pub fn hover_display(status: &HoverStatus) -> (&'static str, String, &'static st
             ("fa-solid fa-eye", format!("Waiting: {champion_name}"), "timeline-card--active"),
         HoverStatus::Hovering { champion_name } =>
             ("fa-solid fa-eye", format!("Hovering: {champion_name}"), "timeline-card--active"),
+        HoverStatus::LockedIn { champion_name } =>
+            ("fa-solid fa-eye", format!("Locked in: {champion_name}"), "timeline-card--done"),
     }
 }
 
@@ -73,7 +75,6 @@ fn hover_is_active(status: &HoverStatus) -> bool {
         HoverStatus::WaitingToHover { .. } | HoverStatus::Hovering { .. }
     )
 }
-
 fn ban_is_active(status: &BanStatus) -> bool {
     matches!(
         status,
@@ -230,6 +231,13 @@ mod tests {
         let (_, label, modifier) = hover_display(&HoverStatus::WaitingToHover { champion_name: "Jinx".into() });
         assert!(label.contains("Jinx"), "label should include champion name, got: {label}");
         assert_eq!(modifier, "timeline-card--active");
+    }
+
+    #[test]
+    fn hover_display_locked_in_includes_champion_name_and_done_modifier() {
+        let (_, label, modifier) = hover_display(&HoverStatus::LockedIn { champion_name: "Ahri".into() });
+        assert!(label.contains("Ahri"), "label should include champion name, got: {label}");
+        assert_eq!(modifier, "timeline-card--done");
     }
 
     #[test]

@@ -318,7 +318,9 @@ fn derive_hover_status(
     champ_locked: bool,
 ) -> HoverStatus {
     if champ_locked {
-        return HoverStatus::Idle;
+        let name = hovered_pick.and_then(|(_, id)| display_names.get(&id)).cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
+        return HoverStatus::LockedIn { champion_name: name };
     }
     match decide_pick(session, config, champion_map, display_names, hovered_pick) {
         PickDecision::Idle                                       => HoverStatus::Idle,

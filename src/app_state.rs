@@ -168,6 +168,7 @@ pub enum HoverStatus {
     AllPicksExhausted { position: String },
     WaitingToHover    { champion_name: String },
     Hovering          { champion_name: String },
+    LockedIn          { champion_name: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -426,6 +427,7 @@ mod tests {
             HoverStatus::AllPicksExhausted { position: "Bot".into() },
             HoverStatus::WaitingToHover    { champion_name: "Jinx".into() },
             HoverStatus::Hovering          { champion_name: "Ahri".into() },
+            HoverStatus::LockedIn          { champion_name: "Ahri".into() },
         ];
         for v in &variants {
             assert_eq!(v, &v.clone());
