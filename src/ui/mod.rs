@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use dioxus::prelude::*;
 use tokio::time::sleep;
 
-use crate::app_state::{ActivityKind, AppState, BanStatus, ChampSelectStatus, ConnectionState, GamePhase, PickStatus};
+use crate::app_state::{ActivityKind, AppState, BanStatus, ChampSelectStatus, ConnectionState, GamePhase, HoverStatus, PickStatus};
 use crate::champion_select::{build_champion_map, decide_ban, decide_pick, handle_ban_phase, handle_champion_select, BanDecision, PickDecision};
 use crate::config::{Config, INSTANT};
 use crate::lcu::{LcuClient, LockfileData};
@@ -267,13 +267,15 @@ async fn inner_poll_loop(
                 // Update live champ-select status signal (always, to keep countdown live)
                 let time_left_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
                 let sub_phase      = session.timer.phase.clone();
-                let ban_status     = derive_ban_status(&session, &cfg, champion_map, display_names, hovered_ban, ban_completed);
-                let pick_status    = derive_pick_status(&session, &cfg, champion_map, display_names, hovered_pick, champ_locked);
+                let ban_status   = derive_ban_status(&session, &cfg, champion_map, display_names, hovered_ban, ban_completed);
+                let hover_status = derive_hover_status(&session, &cfg, champion_map, display_names, hovered_pick, champ_locked);
+                let pick_status  = derive_pick_status(&session, &cfg, champion_map, display_names, hovered_pick, champ_locked);
                 state.champ_select_status.set(Some(ChampSelectStatus {
                     time_left_secs,
                     sub_phase,
-                    ban:  ban_status,
-                    pick: pick_status,
+                    hover: hover_status,
+                    ban:   ban_status,
+                    pick:  pick_status,
                 }));
             }
 
@@ -307,6 +309,34 @@ fn derive_ban_status(
     }
 }
 
+fn derive_hover_status(
+    session: &crate::lcu::ChampSelectSession,
+    config: &crate::config::Config,
+    champion_map: &HashMap<String, i64>,
+    display_names: &HashMap<i64, String>,
+    hovered_pick: Option<(i64, i64)>,
+    champ_locked: bool,
+) -> HoverStatus {
+    if champ_locked {
+        return HoverStatus::Idle;
+    }
+    match decide_pick(session, config, champion_map, display_names, hovered_pick) {
+        PickDecision::Idle                                       => HoverStatus::Idle,
+        PickDecision::NoPrefsConfigured { position }             => HoverStatus::NoPrefsConfigured { position },
+        PickDecision::AllPicksExhausted { position }             => HoverStatus::AllPicksExhausted { position },
+        PickDecision::WaitForHoverTimer { champion_name, .. }    => HoverStatus::WaitingToHover { champion_name },
+        PickDecision::Hover { champion_name, .. }                => HoverStatus::Hovering { champion_name },
+        PickDecision::WaitForLockIn                              => HoverStatus::Hovering {
+            champion_name: hovered_pick
+                .and_then(|(_, id)| display_names.get(&id))
+                .cloned()
+                .unwrap_or_else(|| "Waiting…".to_string()),
+        },
+        PickDecision::StaleHover { .. }                          => HoverStatus::Idle,
+        PickDecision::LockIn { champion_name, .. }               => HoverStatus::Hovering { champion_name },
+    }
+}
+
 fn derive_pick_status(
     session: &crate::lcu::ChampSelectSession,
     config: &crate::config::Config,
@@ -322,18 +352,18 @@ fn derive_pick_status(
     }
     match decide_pick(session, config, champion_map, display_names, hovered_pick) {
         PickDecision::Idle                                       => PickStatus::Idle,
-        PickDecision::NoPrefsConfigured { position }             => PickStatus::NoPrefsConfigured { position },
-        PickDecision::AllPicksExhausted { position }             => PickStatus::AllPicksExhausted { position },
-        PickDecision::WaitForHoverTimer { champion_name, .. }    => PickStatus::WaitingToHover { champion_name },
-        PickDecision::Hover { champion_name, .. }                => PickStatus::Hovering { champion_name },
-        PickDecision::WaitForLockIn                              => PickStatus::Hovering {
+        PickDecision::NoPrefsConfigured { .. }                   => PickStatus::Idle,
+        PickDecision::AllPicksExhausted { .. }                   => PickStatus::Idle,
+        PickDecision::WaitForHoverTimer { champion_name, .. }    => PickStatus::WaitingToLock { champion_name },
+        PickDecision::Hover { champion_name, .. }                => PickStatus::WaitingToLock { champion_name },
+        PickDecision::WaitForLockIn                              => PickStatus::WaitingToLock {
             champion_name: hovered_pick
                 .and_then(|(_, id)| display_names.get(&id))
                 .cloned()
                 .unwrap_or_else(|| "Waiting…".to_string()),
         },
         PickDecision::StaleHover { .. }                          => PickStatus::Idle,
-        PickDecision::LockIn { champion_name, .. }               => PickStatus::Hovering { champion_name },
+        PickDecision::LockIn { champion_name, .. }               => PickStatus::WaitingToLock { champion_name },
     }
 }
 

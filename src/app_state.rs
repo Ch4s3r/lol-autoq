@@ -162,13 +162,19 @@ pub enum BanStatus {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum PickStatus {
+pub enum HoverStatus {
     Idle,
     NoPrefsConfigured { position: String },
     AllPicksExhausted { position: String },
     WaitingToHover    { champion_name: String },
     Hovering          { champion_name: String },
-    LockedIn          { champion_name: String },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PickStatus {
+    Idle,
+    WaitingToLock  { champion_name: String },
+    LockedIn       { champion_name: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -177,8 +183,9 @@ pub struct ChampSelectStatus {
     pub time_left_secs: f64,
     /// LCU sub-phase string: "PLANNING", "BAN_PICK", "FINALIZATION", "".
     pub sub_phase: String,
-    pub ban:  BanStatus,
-    pub pick: PickStatus,
+    pub hover: HoverStatus,
+    pub ban:   BanStatus,
+    pub pick:  PickStatus,
 }
 
 // ---------------------------------------------------------------------------
@@ -412,18 +419,30 @@ mod tests {
     }
 
     #[test]
-    fn pick_status_variants_implement_clone_and_partialeq() {
+    fn hover_status_variants_implement_clone_and_partialeq() {
         let variants = vec![
-            PickStatus::Idle,
-            PickStatus::NoPrefsConfigured { position: "Mid".into() },
-            PickStatus::AllPicksExhausted { position: "Bot".into() },
-            PickStatus::WaitingToHover    { champion_name: "Jinx".into() },
-            PickStatus::Hovering          { champion_name: "Ahri".into() },
-            PickStatus::LockedIn          { champion_name: "Lux".into() },
+            HoverStatus::Idle,
+            HoverStatus::NoPrefsConfigured { position: "Mid".into() },
+            HoverStatus::AllPicksExhausted { position: "Bot".into() },
+            HoverStatus::WaitingToHover    { champion_name: "Jinx".into() },
+            HoverStatus::Hovering          { champion_name: "Ahri".into() },
         ];
         for v in &variants {
             assert_eq!(v, &v.clone());
         }
-        assert_ne!(PickStatus::Idle, PickStatus::NoPrefsConfigured { position: "Top".into() });
+        assert_ne!(HoverStatus::Idle, HoverStatus::NoPrefsConfigured { position: "Top".into() });
+    }
+
+    #[test]
+    fn pick_status_variants_implement_clone_and_partialeq() {
+        let variants = vec![
+            PickStatus::Idle,
+            PickStatus::WaitingToLock { champion_name: "Ahri".into() },
+            PickStatus::LockedIn      { champion_name: "Lux".into() },
+        ];
+        for v in &variants {
+            assert_eq!(v, &v.clone());
+        }
+        assert_ne!(PickStatus::Idle, PickStatus::LockedIn { champion_name: "Top".into() });
     }
 }
