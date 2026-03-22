@@ -150,26 +150,36 @@ pub fn decide_ban(
         None => return BanDecision::AllBansExhausted,
     };
 
-    if hovered_ban != Some(chosen_id) {
-        return BanDecision::Hover {
-            action_id: action.id,
-            champion_id: chosen_id,
-            champion_name: chosen_name,
-        };
-    }
-
     let remaining_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
 
-    // Countdown gate: if a specific timer is configured, wait until enough time has run off.
+    // Countdown gate: wait until the LCU timer is at or below the threshold before
+    // hovering or locking. Checked first so the timer is always respected.
     if config.lock_in_ban_secs != INSTANT {
         let threshold = config.lock_in_ban_secs as f64;
         if remaining_secs > threshold {
+            // Not time yet — hover the champion so it's visible, but don't lock.
+            if hovered_ban != Some(chosen_id) {
+                return BanDecision::Hover {
+                    action_id: action.id,
+                    champion_id: chosen_id,
+                    champion_name: chosen_name,
+                };
+            }
             return BanDecision::WaitForTimer {
                 champion_name: chosen_name,
                 remaining_secs,
                 threshold_secs: threshold,
             };
         }
+    }
+
+    // Time to lock — hover first if not already hovered.
+    if hovered_ban != Some(chosen_id) {
+        return BanDecision::Hover {
+            action_id: action.id,
+            champion_id: chosen_id,
+            champion_name: chosen_name,
+        };
     }
 
     BanDecision::LockIn {
@@ -800,6 +810,19 @@ mod tests {
         cfg.lock_in_ban_secs = 5; // threshold = 5s
         let result = decide_ban(&session, &cfg, &lookup, &display, Some(1));
         assert!(matches!(result, BanDecision::WaitForTimer { .. }));
+    }
+
+    #[test]
+    fn decide_ban_hovers_before_timer_reached_when_not_yet_hovered() {
+        // Timer is 20s, threshold is 5s — not time to lock yet.
+        // Even though hovered_ban is None, the result should be Hover (not WaitForTimer),
+        // because we hover early to show intent while still waiting for the lock window.
+        let (lookup, display) = build_champion_map(&make_summaries());
+        let session = session_with_ban_action(3, "BAN_PICK", 20_000);
+        let mut cfg = default_ban_config();
+        cfg.lock_in_ban_secs = 5;
+        let result = decide_ban(&session, &cfg, &lookup, &display, None);
+        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
     }
 
     #[test]
