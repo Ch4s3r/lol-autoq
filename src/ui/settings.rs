@@ -225,12 +225,6 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
 fn TimersTab(on_save: EventHandler<()>) -> Element {
     let mut state = use_context::<AppState>();
 
-    let lock_ban  = state.config.read().lock_in_ban_secs;
-    let lock_pick = state.config.read().lock_in_pick_secs;
-    let hover     = state.config.read().hover_pick_secs;
-    let queue     = state.config.read().accept_queue_delay_secs;
-    let log_level = state.config.read().log_level.clone();
-
     // Non-INSTANT values must fit in 0-30s for the slider
     const MAX_SECS: u64 = 30;
 
@@ -239,7 +233,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
             TimerSlider {
                 label: "Ban lock-in".to_string(),
                 sublabel: "Lock in the ban when this many seconds remain".to_string(),
-                value: lock_ban,
+                value: state.config.read().lock_in_ban_secs,
                 max_secs: MAX_SECS,
                 on_change: {
                     let on_save = on_save;
@@ -252,7 +246,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
             TimerSlider {
                 label: "Pick lock-in".to_string(),
                 sublabel: "Lock in the pick when this many seconds remain".to_string(),
-                value: lock_pick,
+                value: state.config.read().lock_in_pick_secs,
                 max_secs: MAX_SECS,
                 on_change: {
                     let on_save = on_save;
@@ -265,7 +259,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
             TimerSlider {
                 label: "Pick hover".to_string(),
                 sublabel: "Show champion hover when this many seconds remain (Instant = immediately)".to_string(),
-                value: hover,
+                value: state.config.read().hover_pick_secs,
                 max_secs: MAX_SECS,
                 on_change: {
                     let on_save = on_save;
@@ -278,7 +272,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
             TimerSlider {
                 label: "Queue accept delay".to_string(),
                 sublabel: "Wait this many seconds before accepting a queue pop".to_string(),
-                value: queue,
+                value: state.config.read().accept_queue_delay_secs,
                 max_secs: MAX_SECS,
                 on_change: {
                     let on_save = on_save;
@@ -295,7 +289,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                 div { class: "timer-sublabel", "Detail shown in the activity log and saved to lol-autoq.log" }
                 select {
                     class: "log-level-select",
-                    value: "{log_level}",
+                    value: "{state.config.read().log_level}",
                     onchange: {
                         let on_save = on_save;
                         move |e: Event<FormData>| {
@@ -309,7 +303,7 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
                         option {
                             key: "{level}",
                             value: "{level}",
-                            selected: log_level.as_str() == level,
+                            selected: state.config.read().log_level.as_str() == level,
                             "{level}"
                         }
                     }
