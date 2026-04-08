@@ -81,11 +81,11 @@ pub fn write_activity(timestamp: &str, message: &str, kind: &ActivityKind) {
 }
 
 fn flush_line(line: &str) {
-    if let Some(f) = LOG_FILE.get() {
-        if let Ok(mut w) = f.lock() {
-            let _ = w.write_all(line.as_bytes());
-            let _ = w.flush();
-        }
+    if let Some(f) = LOG_FILE.get()
+        && let Ok(mut w) = f.lock()
+    {
+        let _ = w.write_all(line.as_bytes());
+        let _ = w.flush();
     }
 }
 
@@ -149,12 +149,12 @@ impl<S: tracing::Subscriber> Layer<S> for UiFileLayer {
             message,
             kind,
         };
-        if let Some(buf) = LOG_BUFFER.get() {
-            if let Ok(mut b) = buf.lock() {
-                b.push_front(entry);
-                if b.len() > 500 {
-                    b.pop_back();
-                }
+        if let Some(buf) = LOG_BUFFER.get()
+            && let Ok(mut b) = buf.lock()
+        {
+            b.push_front(entry);
+            if b.len() > 500 {
+                b.pop_back();
             }
         }
     }
