@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
-use crate::app_state::AppState;
 use super::champion_tile::ChampionTile;
+use crate::app_state::AppState;
 
 #[component]
 pub fn ChampionPickerModal(
@@ -20,7 +20,11 @@ pub fn ChampionPickerModal(
     let filtered: Vec<_> = summaries
         .iter()
         .filter(|c| c.is_playable())
-        .filter(|c| q.is_empty() || c.name.to_lowercase().contains(&q) || c.alias.to_lowercase().contains(&q))
+        .filter(|c| {
+            q.is_empty()
+                || c.name.to_lowercase().contains(&q)
+                || c.alias.to_lowercase().contains(&q)
+        })
         .map(|c| {
             let is_selected = current.contains(&c.name);
             (c, is_selected)

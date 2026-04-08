@@ -25,13 +25,13 @@ pub fn build_champion_map(
 
 fn friendly_position(pos: &str) -> &'static str {
     match pos.to_ascii_lowercase().as_str() {
-        "top"                    => "Top",
-        "jungle"                 => "Jungle",
-        "middle" | "mid"         => "Mid",
+        "top" => "Top",
+        "jungle" => "Jungle",
+        "middle" | "mid" => "Mid",
         "bottom" | "bot" | "adc" => "Bot",
-        "utility" | "support"    => "Support",
-        "fill"                   => "Fill",
-        _                        => "Unknown",
+        "utility" | "support" => "Support",
+        "fill" => "Fill",
+        _ => "Unknown",
     }
 }
 
@@ -92,11 +92,24 @@ pub enum BanDecision {
     /// Every preferred ban is already banned.
     AllBansExhausted,
     /// Hover this champion immediately.
-    Hover { action_id: i64, champion_id: i64, champion_name: String },
+    Hover {
+        action_id: i64,
+        champion_id: i64,
+        champion_name: String,
+    },
     /// Already hovered; waiting for the lock-in window.
-    WaitForTimer { champion_name: String, remaining_secs: f64, threshold_secs: f64 },
+    WaitForTimer {
+        champion_name: String,
+        remaining_secs: f64,
+        threshold_secs: f64,
+    },
     /// Time to lock in.
-    LockIn { action_id: i64, champion_id: i64, champion_name: String, remaining_secs: f64 },
+    LockIn {
+        action_id: i64,
+        champion_id: i64,
+        champion_name: String,
+        remaining_secs: f64,
+    },
 }
 
 /// Pure decision function for the ban phase — no I/O, fully unit-testable.
@@ -145,7 +158,13 @@ pub fn decide_ban(
         .map(|a| a.champion_id)
         .collect();
 
-    let (chosen_id, chosen_name) = match best_ban_target(config, champion_map, display_names, &already_banned, &teammate_ban_hovers) {
+    let (chosen_id, chosen_name) = match best_ban_target(
+        config,
+        champion_map,
+        display_names,
+        &already_banned,
+        &teammate_ban_hovers,
+    ) {
         Some(pair) => pair,
         None => return BanDecision::AllBansExhausted,
     };
@@ -209,13 +228,21 @@ pub async fn handle_ban_phase(
             warn!("All preferred bans are already banned — add more options");
             Ok(false)
         }
-        BanDecision::Hover { action_id, champion_id, champion_name } => {
+        BanDecision::Hover {
+            action_id,
+            champion_id,
+            champion_name,
+        } => {
             info!(champion = %champion_name, "Hovering ban...");
             client.hover_champion(action_id, champion_id).await?;
             *hovered_ban = Some(champion_id);
             Ok(false)
         }
-        BanDecision::WaitForTimer { champion_name, remaining_secs, threshold_secs } => {
+        BanDecision::WaitForTimer {
+            champion_name,
+            remaining_secs,
+            threshold_secs,
+        } => {
             trace!(
                 remaining = format!("{remaining_secs:.1}s"),
                 threshold = format!("{threshold_secs:.0}s"),
@@ -224,7 +251,12 @@ pub async fn handle_ban_phase(
             );
             Ok(false)
         }
-        BanDecision::LockIn { action_id, champion_id, champion_name, remaining_secs } => {
+        BanDecision::LockIn {
+            action_id,
+            champion_id,
+            champion_name,
+            remaining_secs,
+        } => {
             info!(
                 champion = %champion_name,
                 remaining = format!("{remaining_secs:.1}s"),
@@ -241,9 +273,7 @@ pub async fn handle_ban_phase(
 /// Return our pick action regardless of whether it is in-progress yet.
 pub fn find_pick_action(session: &ChampSelectSession) -> Option<&Action> {
     session.actions.iter().flatten().find(|a| {
-        a.actor_cell_id == session.local_player_cell_id
-            && a.action_type == "pick"
-            && !a.completed
+        a.actor_cell_id == session.local_player_cell_id && a.action_type == "pick" && !a.completed
     })
 }
 
@@ -336,15 +366,30 @@ pub enum PickDecision {
     /// Every preferred champion is banned or already picked.
     AllPicksExhausted { position: String },
     /// Hover timer hasn't elapsed yet.
-    WaitForHoverTimer { champion_name: String, remaining_secs: f64, threshold_secs: f64 },
+    WaitForHoverTimer {
+        champion_name: String,
+        remaining_secs: f64,
+        threshold_secs: f64,
+    },
     /// Hover this champion now.
-    Hover { action_id: i64, champion_id: i64, champion_name: String, position: String },
+    Hover {
+        action_id: i64,
+        champion_id: i64,
+        champion_name: String,
+        position: String,
+    },
     /// Hovered; waiting for our turn or the lock-in window.
     WaitForLockIn,
     /// Hovered champion got banned — re-evaluate next cycle.
     StaleHover { champion_name: String },
     /// Lock in.
-    LockIn { action_id: i64, champion_id: i64, champion_name: String, remaining_secs: f64, position: String },
+    LockIn {
+        action_id: i64,
+        champion_id: i64,
+        champion_name: String,
+        remaining_secs: f64,
+        position: String,
+    },
 }
 
 /// Pure decision function for the pick phase — no I/O, fully unit-testable.
@@ -365,15 +410,27 @@ pub fn decide_pick(
 
     let prefs = config.champions_for_position(raw_position);
     if prefs.is_empty() {
-        return PickDecision::NoPrefsConfigured { position: position_label };
+        return PickDecision::NoPrefsConfigured {
+            position: position_label,
+        };
     }
 
     let unavailable = unavailable_champion_ids(session);
     trace!(ids = ?unavailable, "unavailable champions");
 
-    let (chosen_id, chosen_name) = match best_pick_target(config, raw_position, champion_map, display_names, &unavailable) {
+    let (chosen_id, chosen_name) = match best_pick_target(
+        config,
+        raw_position,
+        champion_map,
+        display_names,
+        &unavailable,
+    ) {
         Some(pair) => pair,
-        None => return PickDecision::AllPicksExhausted { position: position_label },
+        None => {
+            return PickDecision::AllPicksExhausted {
+                position: position_label,
+            };
+        }
     };
 
     if hovered_pick != Some((action.id, chosen_id)) {
@@ -419,7 +476,9 @@ pub fn decide_pick(
     // banned between the hover and now).
     let unavailable = unavailable_champion_ids(session);
     if unavailable.contains(&chosen_id) {
-        return PickDecision::StaleHover { champion_name: chosen_name };
+        return PickDecision::StaleHover {
+            champion_name: chosen_name,
+        };
     }
 
     PickDecision::LockIn {
@@ -440,7 +499,9 @@ pub async fn handle_champion_select(
     display_names: &HashMap<i64, String>,
     hovered_pick: &mut Option<(i64, i64)>,
 ) -> Result<bool> {
-    let prefs_for_log = config.champions_for_position(local_assigned_position(session)).join(" -> ");
+    let prefs_for_log = config
+        .champions_for_position(local_assigned_position(session))
+        .join(" -> ");
     match decide_pick(session, config, champion_map, display_names, *hovered_pick) {
         PickDecision::Idle => Ok(false),
         PickDecision::NoPrefsConfigured { position } => {
@@ -451,7 +512,11 @@ pub async fn handle_champion_select(
             warn!(position = %position, "All preferred champions are banned/picked — add more options to config.toml");
             Ok(false)
         }
-        PickDecision::WaitForHoverTimer { champion_name, remaining_secs, threshold_secs } => {
+        PickDecision::WaitForHoverTimer {
+            champion_name,
+            remaining_secs,
+            threshold_secs,
+        } => {
             trace!(
                 remaining = format!("{remaining_secs:.1}s"),
                 threshold = format!("{threshold_secs:.0}s"),
@@ -460,7 +525,12 @@ pub async fn handle_champion_select(
             );
             Ok(false)
         }
-        PickDecision::Hover { action_id, champion_id, champion_name, position } => {
+        PickDecision::Hover {
+            action_id,
+            champion_id,
+            champion_name,
+            position,
+        } => {
             info!(
                 position = %position,
                 champion = %champion_name,
@@ -477,7 +547,13 @@ pub async fn handle_champion_select(
             *hovered_pick = None;
             Ok(false)
         }
-        PickDecision::LockIn { action_id, champion_id, champion_name, remaining_secs, position } => {
+        PickDecision::LockIn {
+            action_id,
+            champion_id,
+            champion_name,
+            remaining_secs,
+            position,
+        } => {
             info!(
                 position = %position,
                 champion = %champion_name,
@@ -525,7 +601,13 @@ mod tests {
         ]
     }
 
-    fn make_action(id: i64, cell_id: i64, action_type: &str, in_progress: bool, completed: bool) -> Action {
+    fn make_action(
+        id: i64,
+        cell_id: i64,
+        action_type: &str,
+        in_progress: bool,
+        completed: bool,
+    ) -> Action {
         Action {
             id,
             actor_cell_id: cell_id,
@@ -596,21 +678,21 @@ mod tests {
 
     #[test]
     fn friendly_position_maps_all_known_aliases() {
-        assert_eq!(friendly_position("top"),     "Top");
-        assert_eq!(friendly_position("jungle"),  "Jungle");
-        assert_eq!(friendly_position("middle"),  "Mid");
-        assert_eq!(friendly_position("mid"),     "Mid");
-        assert_eq!(friendly_position("bottom"),  "Bot");
-        assert_eq!(friendly_position("bot"),     "Bot");
-        assert_eq!(friendly_position("adc"),     "Bot");
+        assert_eq!(friendly_position("top"), "Top");
+        assert_eq!(friendly_position("jungle"), "Jungle");
+        assert_eq!(friendly_position("middle"), "Mid");
+        assert_eq!(friendly_position("mid"), "Mid");
+        assert_eq!(friendly_position("bottom"), "Bot");
+        assert_eq!(friendly_position("bot"), "Bot");
+        assert_eq!(friendly_position("adc"), "Bot");
         assert_eq!(friendly_position("utility"), "Support");
         assert_eq!(friendly_position("support"), "Support");
-        assert_eq!(friendly_position("fill"),    "Fill");
+        assert_eq!(friendly_position("fill"), "Fill");
     }
 
     #[test]
     fn friendly_position_unknown_returns_unknown() {
-        assert_eq!(friendly_position(""),        "Unknown");
+        assert_eq!(friendly_position(""), "Unknown");
         assert_eq!(friendly_position("TOPLANE"), "Unknown");
     }
 
@@ -720,7 +802,10 @@ mod tests {
 
     #[test]
     fn unavailable_champion_ids_includes_all_bans() {
-        let bans = Bans { my_team_bans: vec![10], their_team_bans: vec![20] };
+        let bans = Bans {
+            my_team_bans: vec![10],
+            their_team_bans: vec![20],
+        };
         let session = make_session(0, vec![], vec![], bans, "BAN_PICK");
         let ids = unavailable_champion_ids(&session);
         assert!(ids.contains(&10));
@@ -763,14 +848,20 @@ mod tests {
     fn decide_ban_idle_when_no_active_ban_action() {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = make_session(3, vec![], vec![], Bans::default(), "BAN_PICK");
-        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None), BanDecision::Idle);
+        assert_eq!(
+            decide_ban(&session, &default_ban_config(), &lookup, &display, None),
+            BanDecision::Idle
+        );
     }
 
     #[test]
     fn decide_ban_idle_during_planning_phase() {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = session_with_ban_action(3, "PLANNING", 20_000);
-        assert_eq!(decide_ban(&session, &default_ban_config(), &lookup, &display, None), BanDecision::Idle);
+        assert_eq!(
+            decide_ban(&session, &default_ban_config(), &lookup, &display, None),
+            BanDecision::Idle
+        );
     }
 
     #[test]
@@ -779,7 +870,10 @@ mod tests {
         let session = session_with_ban_action(3, "BAN_PICK", 20_000);
         let mut cfg = Config::default();
         cfg.bans = vec![];
-        assert_eq!(decide_ban(&session, &cfg, &lookup, &display, None), BanDecision::NoBansConfigured);
+        assert_eq!(
+            decide_ban(&session, &cfg, &lookup, &display, None),
+            BanDecision::NoBansConfigured
+        );
     }
 
     #[test]
@@ -791,7 +885,10 @@ mod tests {
         // Ahri already banned
         let mut s = session;
         s.bans.my_team_bans = vec![1];
-        assert_eq!(decide_ban(&s, &cfg, &lookup, &display, None), BanDecision::AllBansExhausted);
+        assert_eq!(
+            decide_ban(&s, &cfg, &lookup, &display, None),
+            BanDecision::AllBansExhausted
+        );
     }
 
     #[test]
@@ -799,7 +896,14 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = session_with_ban_action(3, "BAN_PICK", 20_000);
         let result = decide_ban(&session, &default_ban_config(), &lookup, &display, None);
-        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
+        assert_eq!(
+            result,
+            BanDecision::Hover {
+                action_id: 10,
+                champion_id: 1,
+                champion_name: "Ahri".into()
+            }
+        );
     }
 
     #[test]
@@ -822,7 +926,14 @@ mod tests {
         let mut cfg = default_ban_config();
         cfg.lock_in_ban_secs = 5;
         let result = decide_ban(&session, &cfg, &lookup, &display, None);
-        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
+        assert_eq!(
+            result,
+            BanDecision::Hover {
+                action_id: 10,
+                champion_id: 1,
+                champion_name: "Ahri".into()
+            }
+        );
     }
 
     #[test]
@@ -832,12 +943,15 @@ mod tests {
         let mut cfg = default_ban_config();
         cfg.lock_in_ban_secs = 5; // threshold 5s → 3s <= 5s → lock in
         let result = decide_ban(&session, &cfg, &lookup, &display, Some(1));
-        assert_eq!(result, BanDecision::LockIn {
-            action_id: 10,
-            champion_id: 1,
-            champion_name: "Ahri".into(),
-            remaining_secs: 3.0,
-        });
+        assert_eq!(
+            result,
+            BanDecision::LockIn {
+                action_id: 10,
+                champion_id: 1,
+                champion_name: "Ahri".into(),
+                remaining_secs: 3.0,
+            }
+        );
     }
 
     #[test]
@@ -874,7 +988,13 @@ mod tests {
         // all bans already completed so the lock-in guard passes
         let ban = make_action(1, 0, "ban", false, true);
         let member = make_member(cell_id, position, 0);
-        let mut s = make_session(cell_id, vec![vec![ban, pick]], vec![member], bans, "BAN_PICK");
+        let mut s = make_session(
+            cell_id,
+            vec![vec![ban, pick]],
+            vec![member],
+            bans,
+            "BAN_PICK",
+        );
         s.timer.adjusted_time_left_ms = timer_ms;
         s
     }
@@ -891,7 +1011,10 @@ mod tests {
     fn decide_pick_idle_when_no_pick_action() {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = make_session(3, vec![], vec![], Bans::default(), "BAN_PICK");
-        assert_eq!(decide_pick(&session, &default_pick_config(), &lookup, &display, None), PickDecision::Idle);
+        assert_eq!(
+            decide_pick(&session, &default_pick_config(), &lookup, &display, None),
+            PickDecision::Idle
+        );
     }
 
     #[test]
@@ -900,12 +1023,15 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         let session = session_with_pick_action(3, "middle", false, 0, Bans::default());
         let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None);
-        assert_eq!(result, PickDecision::Hover {
-            action_id: 20,
-            champion_id: 1,
-            champion_name: "Ahri".into(),
-            position: "Mid".into(),
-        });
+        assert_eq!(
+            result,
+            PickDecision::Hover {
+                action_id: 20,
+                champion_id: 1,
+                champion_name: "Ahri".into(),
+                position: "Mid".into(),
+            }
+        );
     }
 
     #[test]
@@ -923,7 +1049,13 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         // is_in_progress = false → not our turn yet
         let session = session_with_pick_action(3, "middle", false, 20_000, Bans::default());
-        let result = decide_pick(&session, &default_pick_config(), &lookup, &display, Some((20, 1)));
+        let result = decide_pick(
+            &session,
+            &default_pick_config(),
+            &lookup,
+            &display,
+            Some((20, 1)),
+        );
         assert_eq!(result, PickDecision::WaitForLockIn);
     }
 
@@ -944,20 +1076,26 @@ mod tests {
         let mut cfg = default_pick_config();
         cfg.lock_in_pick_secs = 5; // 3s <= 5s → lock in
         let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)));
-        assert_eq!(result, PickDecision::LockIn {
-            action_id: 20,
-            champion_id: 1,
-            champion_name: "Ahri".into(),
-            remaining_secs: 3.0,
-            position: "Mid".into(),
-        });
+        assert_eq!(
+            result,
+            PickDecision::LockIn {
+                action_id: 20,
+                champion_id: 1,
+                champion_name: "Ahri".into(),
+                remaining_secs: 3.0,
+                position: "Mid".into(),
+            }
+        );
     }
 
     #[test]
     fn decide_pick_stale_hover_when_chosen_champion_banned_before_lock_in() {
         let (lookup, display) = build_champion_map(&make_summaries());
         // Ahri (id=1) gets banned between hover and lock-in
-        let bans = Bans { my_team_bans: vec![1], their_team_bans: vec![] };
+        let bans = Bans {
+            my_team_bans: vec![1],
+            their_team_bans: vec![],
+        };
         let session = session_with_pick_action(3, "middle", true, 3_000, bans);
         let mut cfg = default_pick_config();
         cfg.preferences.mid = vec!["Ahri".into()]; // only Ahri configured, no fallback
@@ -971,16 +1109,21 @@ mod tests {
         // now includes completed non-local pick actions, causing best_pick_target to skip Ahri and
         // return Zed, which triggers a re-hover before we even reach the StaleHover check.
         let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)));
-        assert_eq!(result, PickDecision::AllPicksExhausted { position: "Mid".into() });
+        assert_eq!(
+            result,
+            PickDecision::AllPicksExhausted {
+                position: "Mid".into()
+            }
+        );
     }
 
     #[test]
     fn decide_pick_re_hovers_when_hovered_champion_picked_by_enemy() {
         let (lookup, display) = build_champion_map(&make_summaries());
         // Local player is cell 3, not-yet-our-turn pick action (is_in_progress=false)
-        let our_pick   = make_action(20, 3, "pick", false, false);
-        let ban        = make_action(1, 0, "ban", false, true); // completed ban so guard passes
-        let member     = make_member(3, "middle", 0);
+        let our_pick = make_action(20, 3, "pick", false, false);
+        let ban = make_action(1, 0, "ban", false, true); // completed ban so guard passes
+        let member = make_member(3, "middle", 0);
         // Enemy (cell 7, not local cell 3) has already completed a pick of Ahri (id=1)
         let enemy_pick = make_action_with_champ(30, 7, "pick", false, true, 1);
         let mut session = make_session(
@@ -996,21 +1139,32 @@ mod tests {
         // We previously hovered Ahri (action_id=20, champion_id=1)
         let result = decide_pick(&session, &cfg, &lookup, &display, Some((20, 1)));
         // Ahri is now unavailable (picked by enemy) → bot should re-hover Zed
-        assert_eq!(result, PickDecision::Hover {
-            action_id: 20,
-            champion_id: 2,
-            champion_name: "Zed".into(),
-            position: "Mid".into(),
-        });
+        assert_eq!(
+            result,
+            PickDecision::Hover {
+                action_id: 20,
+                champion_id: 2,
+                champion_name: "Zed".into(),
+                position: "Mid".into(),
+            }
+        );
     }
 
     #[test]
     fn decide_pick_all_picks_exhausted_when_every_champion_banned() {
         let (lookup, display) = build_champion_map(&make_summaries());
-        let bans = Bans { my_team_bans: vec![1, 2], their_team_bans: vec![] };
+        let bans = Bans {
+            my_team_bans: vec![1, 2],
+            their_team_bans: vec![],
+        };
         let session = session_with_pick_action(3, "middle", true, 3_000, bans);
         let result = decide_pick(&session, &default_pick_config(), &lookup, &display, None);
-        assert_eq!(result, PickDecision::AllPicksExhausted { position: "Mid".into() });
+        assert_eq!(
+            result,
+            PickDecision::AllPicksExhausted {
+                position: "Mid".into()
+            }
+        );
     }
 
     #[test]
@@ -1039,7 +1193,8 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         let mut cfg = Config::default();
         cfg.bans = vec!["Ahri".into(), "Zed".into()];
-        let (id, name) = best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &HashSet::new()).unwrap();
+        let (id, name) =
+            best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &HashSet::new()).unwrap();
         assert_eq!(id, 1);
         assert_eq!(name, "Ahri");
     }
@@ -1050,7 +1205,8 @@ mod tests {
         let mut cfg = Config::default();
         cfg.bans = vec!["Ahri".into(), "Zed".into()];
         let already_banned: HashSet<i64> = [1].into_iter().collect();
-        let (id, _) = best_ban_target(&cfg, &lookup, &display, &already_banned, &HashSet::new()).unwrap();
+        let (id, _) =
+            best_ban_target(&cfg, &lookup, &display, &already_banned, &HashSet::new()).unwrap();
         assert_eq!(id, 2);
     }
 
@@ -1060,7 +1216,9 @@ mod tests {
         let mut cfg = Config::default();
         cfg.bans = vec!["Ahri".into()];
         let already_banned: HashSet<i64> = [1].into_iter().collect();
-        assert!(best_ban_target(&cfg, &lookup, &display, &already_banned, &HashSet::new()).is_none());
+        assert!(
+            best_ban_target(&cfg, &lookup, &display, &already_banned, &HashSet::new()).is_none()
+        );
     }
 
     #[test]
@@ -1068,7 +1226,9 @@ mod tests {
         let (lookup, display) = build_champion_map(&make_summaries());
         let mut cfg = Config::default();
         cfg.bans = vec!["DefinitelyNotAChampion".into()];
-        assert!(best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &HashSet::new()).is_none());
+        assert!(
+            best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &HashSet::new()).is_none()
+        );
     }
 
     #[test]
@@ -1078,7 +1238,8 @@ mod tests {
         cfg.bans = vec!["Ahri".into(), "Zed".into()];
         // Ahri (id=1) is being hovered by a teammate for banning
         let teammate_hovers: HashSet<i64> = [1].into_iter().collect();
-        let (id, name) = best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &teammate_hovers).unwrap();
+        let (id, name) =
+            best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &teammate_hovers).unwrap();
         assert_eq!(id, 2);
         assert_eq!(name, "Zed");
     }
@@ -1090,38 +1251,73 @@ mod tests {
         cfg.bans = vec!["Ahri".into(), "Zed".into()];
         // Both Ahri and Zed are already being hovered by teammates
         let teammate_hovers: HashSet<i64> = [1, 2].into_iter().collect();
-        assert!(best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &teammate_hovers).is_none());
+        assert!(
+            best_ban_target(&cfg, &lookup, &display, &HashSet::new(), &teammate_hovers).is_none()
+        );
     }
 
     // ── decide_ban: teammate hover integration ────────────────────────────────
 
-    fn make_action_with_champ(id: i64, cell_id: i64, action_type: &str, in_progress: bool, completed: bool, champion_id: i64) -> Action {
-        Action { id, actor_cell_id: cell_id, action_type: action_type.into(), is_in_progress: in_progress, completed, champion_id }
+    fn make_action_with_champ(
+        id: i64,
+        cell_id: i64,
+        action_type: &str,
+        in_progress: bool,
+        completed: bool,
+        champion_id: i64,
+    ) -> Action {
+        Action {
+            id,
+            actor_cell_id: cell_id,
+            action_type: action_type.into(),
+            is_in_progress: in_progress,
+            completed,
+            champion_id,
+        }
     }
 
     #[test]
     fn decide_ban_skips_to_next_when_teammate_hovering_first_choice() {
         let (lookup, display) = build_champion_map(&make_summaries());
         // local player is cell 3; teammate (cell 1) is hovering Ahri (id=1) for ban
-        let my_ban     = make_action(10, 3, "ban", true, false);
-        let their_ban  = make_action_with_champ(11, 1, "ban", true, false, 1);
-        let member     = make_member(3, "mid", 0);
-        let session    = make_session(3, vec![vec![my_ban, their_ban]], vec![member], Bans::default(), "BAN_PICK");
-        let result     = decide_ban(&session, &default_ban_config(), &lookup, &display, None);
+        let my_ban = make_action(10, 3, "ban", true, false);
+        let their_ban = make_action_with_champ(11, 1, "ban", true, false, 1);
+        let member = make_member(3, "mid", 0);
+        let session = make_session(
+            3,
+            vec![vec![my_ban, their_ban]],
+            vec![member],
+            Bans::default(),
+            "BAN_PICK",
+        );
+        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, None);
         // Should hover Zed (id=2) instead of Ahri
-        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 2, champion_name: "Zed".into() });
+        assert_eq!(
+            result,
+            BanDecision::Hover {
+                action_id: 10,
+                champion_id: 2,
+                champion_name: "Zed".into()
+            }
+        );
     }
 
     #[test]
     fn decide_ban_all_bans_exhausted_when_teammates_cover_every_choice() {
         let (lookup, display) = build_champion_map(&make_summaries());
         // Both Ahri (id=1) and Zed (id=2) are being hovered by teammates
-        let my_ban    = make_action(10, 3, "ban", true, false);
-        let ban_ahri  = make_action_with_champ(11, 1, "ban", true, false, 1);
-        let ban_zed   = make_action_with_champ(12, 2, "ban", true, false, 2);
-        let member    = make_member(3, "mid", 0);
-        let session   = make_session(3, vec![vec![my_ban, ban_ahri, ban_zed]], vec![member], Bans::default(), "BAN_PICK");
-        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None);
+        let my_ban = make_action(10, 3, "ban", true, false);
+        let ban_ahri = make_action_with_champ(11, 1, "ban", true, false, 1);
+        let ban_zed = make_action_with_champ(12, 2, "ban", true, false, 2);
+        let member = make_member(3, "mid", 0);
+        let session = make_session(
+            3,
+            vec![vec![my_ban, ban_ahri, ban_zed]],
+            vec![member],
+            Bans::default(),
+            "BAN_PICK",
+        );
+        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, None);
         assert_eq!(result, BanDecision::AllBansExhausted);
     }
 
@@ -1131,7 +1327,13 @@ mod tests {
         // We (cell 3) are hovering Ahri — should not treat it as a teammate hover
         let my_ban = make_action_with_champ(10, 3, "ban", true, false, 1);
         let member = make_member(3, "mid", 0);
-        let session = make_session(3, vec![vec![my_ban]], vec![member], Bans::default(), "BAN_PICK");
+        let session = make_session(
+            3,
+            vec![vec![my_ban]],
+            vec![member],
+            Bans::default(),
+            "BAN_PICK",
+        );
         // hovered_ban = Some(1): we've already hovered Ahri and have plenty of time
         let result = decide_ban(&session, &default_ban_config(), &lookup, &display, Some(1));
         // Should wait for timer (20s remain > 5s threshold) — not skip Ahri
@@ -1142,13 +1344,26 @@ mod tests {
     fn decide_ban_ignores_teammate_hover_with_zero_champion_id() {
         let (lookup, display) = build_champion_map(&make_summaries());
         // Teammate action has champion_id = 0 (not yet picked) — must not be treated as a hover
-        let my_ban    = make_action(10, 3, "ban", true, false);
+        let my_ban = make_action(10, 3, "ban", true, false);
         let their_ban = make_action_with_champ(11, 1, "ban", true, false, 0);
-        let member    = make_member(3, "mid", 0);
-        let session   = make_session(3, vec![vec![my_ban, their_ban]], vec![member], Bans::default(), "BAN_PICK");
-        let result    = decide_ban(&session, &default_ban_config(), &lookup, &display, None);
+        let member = make_member(3, "mid", 0);
+        let session = make_session(
+            3,
+            vec![vec![my_ban, their_ban]],
+            vec![member],
+            Bans::default(),
+            "BAN_PICK",
+        );
+        let result = decide_ban(&session, &default_ban_config(), &lookup, &display, None);
         // Ahri should still be the first choice since the teammate hasn't hovered anything
-        assert_eq!(result, BanDecision::Hover { action_id: 10, champion_id: 1, champion_name: "Ahri".into() });
+        assert_eq!(
+            result,
+            BanDecision::Hover {
+                action_id: 10,
+                champion_id: 1,
+                champion_name: "Ahri".into()
+            }
+        );
     }
 
     // ── best_pick_target ──────────────────────────────────────────────────────

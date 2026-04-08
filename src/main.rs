@@ -16,7 +16,7 @@ fn main() {
 
     // Tracing subscriber: fmt layer for stdout (respects RUST_LOG) +
     // our layer that writes to lol-autoq.log and the UI activity buffer.
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+    use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
     tracing_subscriber::registry()
@@ -47,4 +47,3 @@ fn main() {
         )
         .launch(ui::App);
 }
-

@@ -1,11 +1,9 @@
 use dioxus::prelude::*;
 
-use crate::app_state::AppState;
 use super::components::{
-    lane_card::LaneCard,
-    timer_slider::TimerSlider,
-    champion_picker::ChampionPickerModal,
+    champion_picker::ChampionPickerModal, lane_card::LaneCard, timer_slider::TimerSlider,
 };
+use crate::app_state::AppState;
 
 #[derive(Clone, Copy, PartialEq)]
 enum SettingsTab {
@@ -73,12 +71,12 @@ fn PicksTab(on_save: EventHandler<()>) -> Element {
     let mut state = use_context::<AppState>();
 
     let lanes: Vec<(&'static str, LaneGetter)> = vec![
-        ("Top",     |p| &p.top),
-        ("Jungle",  |p| &p.jungle),
-        ("Mid",     |p| &p.mid),
-        ("Bot",     |p| &p.bot),
+        ("Top", |p| &p.top),
+        ("Jungle", |p| &p.jungle),
+        ("Mid", |p| &p.mid),
+        ("Bot", |p| &p.bot),
         ("Support", |p| &p.support),
-        ("Fill",    |p| &p.fill),
+        ("Fill", |p| &p.fill),
     ];
 
     rsx! {

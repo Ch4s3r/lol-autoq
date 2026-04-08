@@ -16,9 +16,21 @@ pub fn timer_slider_state(value: u64, max_secs: u64) -> TimerSliderState {
     let is_instant = value == INSTANT;
     TimerSliderState {
         is_instant,
-        display: if is_instant { "Instant".to_string() } else { format!("{value}s") },
-        slider_val: if is_instant { max_secs } else { value.min(max_secs) },
-        value_class: if is_instant { "timer-value instant" } else { "timer-value" },
+        display: if is_instant {
+            "Instant".to_string()
+        } else {
+            format!("{value}s")
+        },
+        slider_val: if is_instant {
+            max_secs
+        } else {
+            value.min(max_secs)
+        },
+        value_class: if is_instant {
+            "timer-value instant"
+        } else {
+            "timer-value"
+        },
     }
 }
 

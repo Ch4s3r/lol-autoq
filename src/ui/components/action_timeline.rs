@@ -8,18 +8,36 @@ use crate::app_state::{BanStatus, ChampSelectStatus, HoverStatus, PickStatus};
 /// Returns `(icon_class, label, css_modifier)` for a `HoverStatus`.
 pub fn hover_display(status: &HoverStatus) -> (&'static str, String, &'static str) {
     match status {
-        HoverStatus::Idle =>
-            ("fa-solid fa-eye", "Waiting…".to_string(), "timeline-card--idle"),
-        HoverStatus::NoPrefsConfigured { position } =>
-            ("fa-solid fa-eye", format!("No prefs for {position}"), "timeline-card--muted"),
-        HoverStatus::AllPicksExhausted { position } =>
-            ("fa-solid fa-eye", format!("All picks exhausted ({position})"), "timeline-card--muted"),
-        HoverStatus::WaitingToHover { champion_name } =>
-            ("fa-solid fa-eye", format!("Waiting: {champion_name}"), "timeline-card--active"),
-        HoverStatus::Hovering { champion_name } =>
-            ("fa-solid fa-eye", format!("Hovering: {champion_name}"), "timeline-card--active"),
-        HoverStatus::LockedIn { champion_name } =>
-            ("fa-solid fa-eye", format!("Locked in: {champion_name}"), "timeline-card--done"),
+        HoverStatus::Idle => (
+            "fa-solid fa-eye",
+            "Waiting…".to_string(),
+            "timeline-card--idle",
+        ),
+        HoverStatus::NoPrefsConfigured { position } => (
+            "fa-solid fa-eye",
+            format!("No prefs for {position}"),
+            "timeline-card--muted",
+        ),
+        HoverStatus::AllPicksExhausted { position } => (
+            "fa-solid fa-eye",
+            format!("All picks exhausted ({position})"),
+            "timeline-card--muted",
+        ),
+        HoverStatus::WaitingToHover { champion_name } => (
+            "fa-solid fa-eye",
+            format!("Waiting: {champion_name}"),
+            "timeline-card--active",
+        ),
+        HoverStatus::Hovering { champion_name } => (
+            "fa-solid fa-eye",
+            format!("Hovering: {champion_name}"),
+            "timeline-card--active",
+        ),
+        HoverStatus::LockedIn { champion_name } => (
+            "fa-solid fa-eye",
+            format!("Locked in: {champion_name}"),
+            "timeline-card--done",
+        ),
     }
 }
 
@@ -31,41 +49,68 @@ pub fn hover_display(status: &HoverStatus) -> (&'static str, String, &'static st
 ///                `timeline-card--active`, `timeline-card--done`
 pub fn ban_display(status: &BanStatus) -> (&'static str, String, &'static str) {
     match status {
-        BanStatus::Idle =>
-            ("fa-solid fa-ban", "Waiting…".to_string(), "timeline-card--idle"),
-        BanStatus::NoBansConfigured =>
-            ("fa-solid fa-ban", "No bans configured".to_string(), "timeline-card--muted"),
-        BanStatus::AllBansExhausted =>
-            ("fa-solid fa-ban", "All bans exhausted".to_string(), "timeline-card--muted"),
-        BanStatus::WaitingToLock { champion_name } =>
-            ("fa-solid fa-ban", format!("Locking: {champion_name}"), "timeline-card--active"),
-        BanStatus::Hovering { champion_name } =>
-            ("fa-solid fa-ban", format!("Hovering: {champion_name}"), "timeline-card--active"),
-        BanStatus::Banned { champion_name } =>
-            ("fa-solid fa-ban", format!("Banned: {champion_name}"), "timeline-card--done"),
+        BanStatus::Idle => (
+            "fa-solid fa-ban",
+            "Waiting…".to_string(),
+            "timeline-card--idle",
+        ),
+        BanStatus::NoBansConfigured => (
+            "fa-solid fa-ban",
+            "No bans configured".to_string(),
+            "timeline-card--muted",
+        ),
+        BanStatus::AllBansExhausted => (
+            "fa-solid fa-ban",
+            "All bans exhausted".to_string(),
+            "timeline-card--muted",
+        ),
+        BanStatus::WaitingToLock { champion_name } => (
+            "fa-solid fa-ban",
+            format!("Locking: {champion_name}"),
+            "timeline-card--active",
+        ),
+        BanStatus::Hovering { champion_name } => (
+            "fa-solid fa-ban",
+            format!("Hovering: {champion_name}"),
+            "timeline-card--active",
+        ),
+        BanStatus::Banned { champion_name } => (
+            "fa-solid fa-ban",
+            format!("Banned: {champion_name}"),
+            "timeline-card--done",
+        ),
     }
 }
 
 /// Returns `(icon_class, label, css_modifier)` for a `PickStatus`.
 pub fn pick_display(status: &PickStatus) -> (&'static str, String, &'static str) {
     match status {
-        PickStatus::Idle =>
-            ("fa-solid fa-wand-magic-sparkles", "Waiting…".to_string(), "timeline-card--idle"),
-        PickStatus::WaitingToLock { champion_name } =>
-            ("fa-solid fa-wand-magic-sparkles", format!("Locking: {champion_name}"), "timeline-card--active"),
-        PickStatus::LockedIn { champion_name } =>
-            ("fa-solid fa-wand-magic-sparkles", format!("Locked in: {champion_name}"), "timeline-card--done"),
+        PickStatus::Idle => (
+            "fa-solid fa-wand-magic-sparkles",
+            "Waiting…".to_string(),
+            "timeline-card--idle",
+        ),
+        PickStatus::WaitingToLock { champion_name } => (
+            "fa-solid fa-wand-magic-sparkles",
+            format!("Locking: {champion_name}"),
+            "timeline-card--active",
+        ),
+        PickStatus::LockedIn { champion_name } => (
+            "fa-solid fa-wand-magic-sparkles",
+            format!("Locked in: {champion_name}"),
+            "timeline-card--done",
+        ),
     }
 }
 
 /// Maps an LCU sub-phase string to a human-readable label.
 pub fn phase_label(sub_phase: &str) -> &'static str {
     match sub_phase {
-        "PLANNING"     => "Planning",
-        "BAN_PICK"     => "Ban / Pick",
+        "PLANNING" => "Planning",
+        "BAN_PICK" => "Ban / Pick",
         "FINALIZATION" => "Finalization",
-        ""             => "—",
-        _              => "In Progress",
+        "" => "—",
+        _ => "In Progress",
     }
 }
 
@@ -208,28 +253,46 @@ mod tests {
     #[test]
     fn ban_display_idle_shows_waiting_label_and_idle_modifier() {
         let (_, label, modifier) = ban_display(&BanStatus::Idle);
-        assert!(label.contains("Waiting"), "label should mention waiting, got: {label}");
+        assert!(
+            label.contains("Waiting"),
+            "label should mention waiting, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--idle");
     }
 
     #[test]
     fn ban_display_hovering_includes_champion_name_and_active_modifier() {
-        let (_, label, modifier) = ban_display(&BanStatus::Hovering { champion_name: "Zed".into() });
-        assert!(label.contains("Zed"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = ban_display(&BanStatus::Hovering {
+            champion_name: "Zed".into(),
+        });
+        assert!(
+            label.contains("Zed"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--active");
     }
 
     #[test]
     fn ban_display_waiting_to_lock_shows_active_modifier() {
-        let (_, label, modifier) = ban_display(&BanStatus::WaitingToLock { champion_name: "Yasuo".into() });
-        assert!(label.contains("Yasuo"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = ban_display(&BanStatus::WaitingToLock {
+            champion_name: "Yasuo".into(),
+        });
+        assert!(
+            label.contains("Yasuo"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--active");
     }
 
     #[test]
     fn ban_display_banned_includes_champion_name_and_done_modifier() {
-        let (_, label, modifier) = ban_display(&BanStatus::Banned { champion_name: "Yone".into() });
-        assert!(label.contains("Yone"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = ban_display(&BanStatus::Banned {
+            champion_name: "Yone".into(),
+        });
+        assert!(
+            label.contains("Yone"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--done");
     }
 
@@ -244,66 +307,101 @@ mod tests {
     #[test]
     fn hover_display_idle_shows_waiting_label_and_idle_modifier() {
         let (_, label, modifier) = hover_display(&HoverStatus::Idle);
-        assert!(label.contains("Waiting"), "label should mention waiting, got: {label}");
+        assert!(
+            label.contains("Waiting"),
+            "label should mention waiting, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--idle");
     }
 
     #[test]
     fn hover_display_hovering_includes_champion_name_and_active_modifier() {
-        let (_, label, modifier) = hover_display(&HoverStatus::Hovering { champion_name: "Ahri".into() });
-        assert!(label.contains("Ahri"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = hover_display(&HoverStatus::Hovering {
+            champion_name: "Ahri".into(),
+        });
+        assert!(
+            label.contains("Ahri"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--active");
     }
 
     #[test]
     fn hover_display_waiting_to_hover_shows_active_modifier() {
-        let (_, label, modifier) = hover_display(&HoverStatus::WaitingToHover { champion_name: "Jinx".into() });
-        assert!(label.contains("Jinx"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = hover_display(&HoverStatus::WaitingToHover {
+            champion_name: "Jinx".into(),
+        });
+        assert!(
+            label.contains("Jinx"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--active");
     }
 
     #[test]
     fn hover_display_locked_in_includes_champion_name_and_done_modifier() {
-        let (_, label, modifier) = hover_display(&HoverStatus::LockedIn { champion_name: "Ahri".into() });
-        assert!(label.contains("Ahri"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = hover_display(&HoverStatus::LockedIn {
+            champion_name: "Ahri".into(),
+        });
+        assert!(
+            label.contains("Ahri"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--done");
     }
 
     #[test]
     fn hover_display_no_prefs_and_exhausted_show_muted_modifier() {
-        let (_, _, modifier) = hover_display(&HoverStatus::NoPrefsConfigured { position: "Mid".into() });
+        let (_, _, modifier) = hover_display(&HoverStatus::NoPrefsConfigured {
+            position: "Mid".into(),
+        });
         assert_eq!(modifier, "timeline-card--muted");
-        let (_, _, modifier2) = hover_display(&HoverStatus::AllPicksExhausted { position: "Bot".into() });
+        let (_, _, modifier2) = hover_display(&HoverStatus::AllPicksExhausted {
+            position: "Bot".into(),
+        });
         assert_eq!(modifier2, "timeline-card--muted");
     }
 
     #[test]
     fn pick_display_idle_shows_waiting_label_and_idle_modifier() {
         let (_, label, modifier) = pick_display(&PickStatus::Idle);
-        assert!(label.contains("Waiting"), "label should mention waiting, got: {label}");
+        assert!(
+            label.contains("Waiting"),
+            "label should mention waiting, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--idle");
     }
 
     #[test]
     fn pick_display_locked_in_includes_champion_name_and_done_modifier() {
-        let (_, label, modifier) = pick_display(&PickStatus::LockedIn { champion_name: "Jinx".into() });
-        assert!(label.contains("Jinx"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = pick_display(&PickStatus::LockedIn {
+            champion_name: "Jinx".into(),
+        });
+        assert!(
+            label.contains("Jinx"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--done");
     }
 
     #[test]
     fn pick_display_waiting_to_lock_shows_active_modifier() {
-        let (_, label, modifier) = pick_display(&PickStatus::WaitingToLock { champion_name: "Ahri".into() });
-        assert!(label.contains("Ahri"), "label should include champion name, got: {label}");
+        let (_, label, modifier) = pick_display(&PickStatus::WaitingToLock {
+            champion_name: "Ahri".into(),
+        });
+        assert!(
+            label.contains("Ahri"),
+            "label should include champion name, got: {label}"
+        );
         assert_eq!(modifier, "timeline-card--active");
     }
 
     #[test]
     fn phase_label_maps_all_known_sub_phases_and_unknown_fallback() {
-        assert_eq!(phase_label("PLANNING"),     "Planning");
-        assert_eq!(phase_label("BAN_PICK"),     "Ban / Pick");
+        assert_eq!(phase_label("PLANNING"), "Planning");
+        assert_eq!(phase_label("BAN_PICK"), "Ban / Pick");
         assert_eq!(phase_label("FINALIZATION"), "Finalization");
-        assert_eq!(phase_label(""),             "—");
+        assert_eq!(phase_label(""), "—");
         assert_eq!(phase_label("SOMETHING_NEW"), "In Progress");
     }
 }

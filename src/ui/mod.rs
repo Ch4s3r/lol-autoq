@@ -9,8 +9,14 @@ use std::time::{Duration, Instant};
 use dioxus::prelude::*;
 use tokio::time::sleep;
 
-use crate::app_state::{ActivityKind, AppState, BanStatus, ChampSelectStatus, ConnectionState, GamePhase, HoverStatus, PickStatus};
-use crate::champion_select::{build_champion_map, decide_ban, decide_pick, handle_ban_phase, handle_champion_select, BanDecision, PickDecision};
+use crate::app_state::{
+    ActivityKind, AppState, BanStatus, ChampSelectStatus, ConnectionState, GamePhase, HoverStatus,
+    PickStatus,
+};
+use crate::champion_select::{
+    BanDecision, PickDecision, build_champion_map, decide_ban, decide_pick, handle_ban_phase,
+    handle_champion_select,
+};
 use crate::config::{Config, INSTANT};
 use crate::lcu::{LcuClient, LockfileData};
 
@@ -99,7 +105,9 @@ async fn bg_poll_loop(mut state: AppState) {
         // 2. Create LCU client
         let client = match LcuClient::new(&lockfile) {
             Ok(c) => {
-                state.connection.set(ConnectionState::Connected { port: lockfile.port });
+                state.connection.set(ConnectionState::Connected {
+                    port: lockfile.port,
+                });
                 c
             }
             Err(_) => {
@@ -132,7 +140,10 @@ async fn bg_poll_loop(mut state: AppState) {
         );
 
         // 5. Inner poll loop
-        if inner_poll_loop(&client, state, &champion_map, &display_names).await.is_err() {
+        if inner_poll_loop(&client, state, &champion_map, &display_names)
+            .await
+            .is_err()
+        {
             state.push_activity("Lost connection to LCU", ActivityKind::Warning);
             state.connection.set(ConnectionState::Disconnected);
             state.phase.set(GamePhase::None);
@@ -155,6 +166,11 @@ async fn inner_poll_loop(
     let mut champ_locked = false;
     let mut hovered_ban: Option<i64> = None;
     let mut hovered_pick: Option<(i64, i64)> = None;
+    // Phase timer diagnostics — tracks sub-phase changes and per-second ticks
+    // so `lol-autoq.log` at DEBUG level contains a full timetable of phase durations.
+    let mut last_sub_phase = String::new();
+    let mut last_logged_whole_sec: i64 = -1;
+    let mut ready_check_tick_sec: i64 = -1;
 
     loop {
         // Drain tracing events into the UI activity log (keeps file and UI in sync).
@@ -178,7 +194,9 @@ async fn inner_poll_loop(
             hovered_pick = None;
             state.hovered_champion.set(None);
             state.champ_select_status.set(None);
-
+            last_sub_phase = String::new();
+            last_logged_whole_sec = -1;
+            ready_check_tick_sec = -1;
         }
 
         let cfg: Config = state.config.read().clone();
@@ -188,11 +206,27 @@ async fn inner_poll_loop(
                 if !ready_check_accepted {
                     let delay = cfg.accept_queue_delay_secs;
                     let seen_at = ready_check_seen_at.get_or_insert_with(Instant::now);
+                    // Per-second tick so the log shows elapsed time during ReadyCheck.
+                    let elapsed_whole = seen_at.elapsed().as_secs() as i64;
+                    if elapsed_whole != ready_check_tick_sec {
+                        ready_check_tick_sec = elapsed_whole;
+                        tracing::debug!(
+                            phase = "ReadyCheck",
+                            elapsed_secs = elapsed_whole,
+                            delay_cfg = if delay == INSTANT {
+                                "instant".to_string()
+                            } else {
+                                format!("{delay}s")
+                            },
+                            "phase_tick"
+                        );
+                    }
                     if (delay == INSTANT || seen_at.elapsed() >= Duration::from_secs(delay))
-                        && client.accept_ready_check().await.is_ok() {
-                            state.push_activity("Queue accepted!", ActivityKind::Success);
-                            ready_check_accepted = true;
-                        }
+                        && client.accept_ready_check().await.is_ok()
+                    {
+                        state.push_activity("Queue accepted!", ActivityKind::Success);
+                        ready_check_accepted = true;
+                    }
                 }
             }
 
@@ -205,6 +239,35 @@ async fn inner_poll_loop(
                     }
                 };
 
+                // ── Phase timer diagnostics ────────────────────────────────
+                let sub_phase_now = session.timer.phase.clone();
+                let total_secs = session.timer.total_time_ms as f64 / 1000.0;
+                let remaining_secs_now = session.timer.adjusted_time_left_ms as f64 / 1000.0;
+
+                // Log whenever sub-phase changes so we know the full duration.
+                if sub_phase_now != last_sub_phase {
+                    tracing::debug!(
+                        sub_phase = %sub_phase_now,
+                        total_secs,
+                        "phase_started"
+                    );
+                    last_sub_phase = sub_phase_now.clone();
+                    last_logged_whole_sec = -1; // reset tick counter for new phase
+                }
+
+                // Log one line per whole second so the log file is a complete timetable.
+                let whole_sec = remaining_secs_now.ceil() as i64;
+                if whole_sec != last_logged_whole_sec {
+                    last_logged_whole_sec = whole_sec;
+                    tracing::debug!(
+                        sub_phase = %sub_phase_now,
+                        remaining_secs = remaining_secs_now,
+                        total_secs,
+                        "phase_tick"
+                    );
+                }
+                // ── end phase timer diagnostics ────────────────────────────
+
                 // Pick handling
                 if !champ_locked {
                     let prev_hover = hovered_pick;
@@ -216,18 +279,26 @@ async fn inner_poll_loop(
                         display_names,
                         &mut hovered_pick,
                     )
-                    .await {
+                    .await
+                    {
                         if hovered_pick != prev_hover
-                            && let Some((_, id)) = hovered_pick {
-                                let name = display_names.get(&id).cloned().unwrap_or_default();
-                                state.hovered_champion.set(Some(name.clone()));
-                                state.push_activity(format!("Hovering pick: {name}"), ActivityKind::Info);
-                            }
+                            && let Some((_, id)) = hovered_pick
+                        {
+                            let name = display_names.get(&id).cloned().unwrap_or_default();
+                            state.hovered_champion.set(Some(name.clone()));
+                            state.push_activity(
+                                format!("Hovering pick: {name}"),
+                                ActivityKind::Info,
+                            );
+                        }
                         if locked {
                             champ_locked = true;
                             if let Some((_, id)) = hovered_pick {
                                 let name = display_names.get(&id).cloned().unwrap_or_default();
-                                state.push_activity(format!("Locked in: {name}"), ActivityKind::Success);
+                                state.push_activity(
+                                    format!("Locked in: {name}"),
+                                    ActivityKind::Success,
+                                );
                             }
                         }
                     }
@@ -249,16 +320,23 @@ async fn inner_poll_loop(
                         Ok(true) => {
                             if let Some(id) = hovered_ban {
                                 let name = display_names.get(&id).cloned().unwrap_or_default();
-                                state.push_activity(format!("Banned: {name}"), ActivityKind::Success);
+                                state.push_activity(
+                                    format!("Banned: {name}"),
+                                    ActivityKind::Success,
+                                );
                             }
                             ban_completed = true;
                         }
                         Ok(false) => {
                             if hovered_ban != prev_ban
-                                && let Some(id) = hovered_ban {
-                                    let name = display_names.get(&id).cloned().unwrap_or_default();
-                                    state.push_activity(format!("Hovering ban: {name}"), ActivityKind::Info);
-                                }
+                                && let Some(id) = hovered_ban
+                            {
+                                let name = display_names.get(&id).cloned().unwrap_or_default();
+                                state.push_activity(
+                                    format!("Hovering ban: {name}"),
+                                    ActivityKind::Info,
+                                );
+                            }
                         }
                         Err(_) => {}
                     }
@@ -266,16 +344,37 @@ async fn inner_poll_loop(
 
                 // Update live champ-select status signal (always, to keep countdown live)
                 let time_left_secs = session.timer.adjusted_time_left_ms as f64 / 1000.0;
-                let sub_phase      = session.timer.phase.clone();
-                let ban_status   = derive_ban_status(&session, &cfg, champion_map, display_names, hovered_ban, ban_completed);
-                let hover_status = derive_hover_status(&session, &cfg, champion_map, display_names, hovered_pick, champ_locked);
-                let pick_status  = derive_pick_status(&session, &cfg, champion_map, display_names, hovered_pick, champ_locked);
+                let sub_phase = session.timer.phase.clone();
+                let ban_status = derive_ban_status(
+                    &session,
+                    &cfg,
+                    champion_map,
+                    display_names,
+                    hovered_ban,
+                    ban_completed,
+                );
+                let hover_status = derive_hover_status(
+                    &session,
+                    &cfg,
+                    champion_map,
+                    display_names,
+                    hovered_pick,
+                    champ_locked,
+                );
+                let pick_status = derive_pick_status(
+                    &session,
+                    &cfg,
+                    champion_map,
+                    display_names,
+                    hovered_pick,
+                    champ_locked,
+                );
                 state.champ_select_status.set(Some(ChampSelectStatus {
                     time_left_secs,
                     sub_phase,
                     hover: hover_status,
-                    ban:   ban_status,
-                    pick:  pick_status,
+                    ban: ban_status,
+                    pick: pick_status,
                 }));
             }
 
@@ -295,17 +394,23 @@ fn derive_ban_status(
     ban_completed: bool,
 ) -> BanStatus {
     if ban_completed {
-        let name = hovered_ban.and_then(|id| display_names.get(&id)).cloned()
+        let name = hovered_ban
+            .and_then(|id| display_names.get(&id))
+            .cloned()
             .unwrap_or_else(|| "Unknown".to_string());
-        return BanStatus::Banned { champion_name: name };
+        return BanStatus::Banned {
+            champion_name: name,
+        };
     }
     match decide_ban(session, config, champion_map, display_names, hovered_ban) {
-        BanDecision::Idle                                   => BanStatus::Idle,
-        BanDecision::NoBansConfigured                       => BanStatus::NoBansConfigured,
-        BanDecision::AllBansExhausted                       => BanStatus::AllBansExhausted,
-        BanDecision::WaitForTimer { champion_name, .. }     => BanStatus::WaitingToLock { champion_name },
-        BanDecision::Hover  { champion_name, .. }           => BanStatus::Hovering { champion_name },
-        BanDecision::LockIn { champion_name, .. }           => BanStatus::Hovering { champion_name },
+        BanDecision::Idle => BanStatus::Idle,
+        BanDecision::NoBansConfigured => BanStatus::NoBansConfigured,
+        BanDecision::AllBansExhausted => BanStatus::AllBansExhausted,
+        BanDecision::WaitForTimer { champion_name, .. } => {
+            BanStatus::WaitingToLock { champion_name }
+        }
+        BanDecision::Hover { champion_name, .. } => BanStatus::Hovering { champion_name },
+        BanDecision::LockIn { champion_name, .. } => BanStatus::Hovering { champion_name },
     }
 }
 
@@ -318,24 +423,30 @@ fn derive_hover_status(
     champ_locked: bool,
 ) -> HoverStatus {
     if champ_locked {
-        let name = hovered_pick.and_then(|(_, id)| display_names.get(&id)).cloned()
+        let name = hovered_pick
+            .and_then(|(_, id)| display_names.get(&id))
+            .cloned()
             .unwrap_or_else(|| "Unknown".to_string());
-        return HoverStatus::LockedIn { champion_name: name };
+        return HoverStatus::LockedIn {
+            champion_name: name,
+        };
     }
     match decide_pick(session, config, champion_map, display_names, hovered_pick) {
-        PickDecision::Idle                                       => HoverStatus::Idle,
-        PickDecision::NoPrefsConfigured { position }             => HoverStatus::NoPrefsConfigured { position },
-        PickDecision::AllPicksExhausted { position }             => HoverStatus::AllPicksExhausted { position },
-        PickDecision::WaitForHoverTimer { champion_name, .. }    => HoverStatus::WaitingToHover { champion_name },
-        PickDecision::Hover { champion_name, .. }                => HoverStatus::Hovering { champion_name },
-        PickDecision::WaitForLockIn                              => HoverStatus::Hovering {
+        PickDecision::Idle => HoverStatus::Idle,
+        PickDecision::NoPrefsConfigured { position } => HoverStatus::NoPrefsConfigured { position },
+        PickDecision::AllPicksExhausted { position } => HoverStatus::AllPicksExhausted { position },
+        PickDecision::WaitForHoverTimer { champion_name, .. } => {
+            HoverStatus::WaitingToHover { champion_name }
+        }
+        PickDecision::Hover { champion_name, .. } => HoverStatus::Hovering { champion_name },
+        PickDecision::WaitForLockIn => HoverStatus::Hovering {
             champion_name: hovered_pick
                 .and_then(|(_, id)| display_names.get(&id))
                 .cloned()
                 .unwrap_or_else(|| "Waiting…".to_string()),
         },
-        PickDecision::StaleHover { .. }                          => HoverStatus::Idle,
-        PickDecision::LockIn { champion_name, .. }               => HoverStatus::Hovering { champion_name },
+        PickDecision::StaleHover { .. } => HoverStatus::Idle,
+        PickDecision::LockIn { champion_name, .. } => HoverStatus::Hovering { champion_name },
     }
 }
 
@@ -348,24 +459,30 @@ fn derive_pick_status(
     champ_locked: bool,
 ) -> PickStatus {
     if champ_locked {
-        let name = hovered_pick.and_then(|(_, id)| display_names.get(&id)).cloned()
+        let name = hovered_pick
+            .and_then(|(_, id)| display_names.get(&id))
+            .cloned()
             .unwrap_or_else(|| "Unknown".to_string());
-        return PickStatus::LockedIn { champion_name: name };
+        return PickStatus::LockedIn {
+            champion_name: name,
+        };
     }
     match decide_pick(session, config, champion_map, display_names, hovered_pick) {
-        PickDecision::Idle                                       => PickStatus::Idle,
-        PickDecision::NoPrefsConfigured { .. }                   => PickStatus::Idle,
-        PickDecision::AllPicksExhausted { .. }                   => PickStatus::Idle,
-        PickDecision::WaitForHoverTimer { champion_name, .. }    => PickStatus::WaitingToLock { champion_name },
-        PickDecision::Hover { champion_name, .. }                => PickStatus::WaitingToLock { champion_name },
-        PickDecision::WaitForLockIn                              => PickStatus::WaitingToLock {
+        PickDecision::Idle => PickStatus::Idle,
+        PickDecision::NoPrefsConfigured { .. } => PickStatus::Idle,
+        PickDecision::AllPicksExhausted { .. } => PickStatus::Idle,
+        PickDecision::WaitForHoverTimer { champion_name, .. } => {
+            PickStatus::WaitingToLock { champion_name }
+        }
+        PickDecision::Hover { champion_name, .. } => PickStatus::WaitingToLock { champion_name },
+        PickDecision::WaitForLockIn => PickStatus::WaitingToLock {
             champion_name: hovered_pick
                 .and_then(|(_, id)| display_names.get(&id))
                 .cloned()
                 .unwrap_or_else(|| "Waiting…".to_string()),
         },
-        PickDecision::StaleHover { .. }                          => PickStatus::Idle,
-        PickDecision::LockIn { champion_name, .. }               => PickStatus::WaitingToLock { champion_name },
+        PickDecision::StaleHover { .. } => PickStatus::Idle,
+        PickDecision::LockIn { champion_name, .. } => PickStatus::WaitingToLock { champion_name },
     }
 }
 
@@ -383,22 +500,36 @@ mod tests {
     #[test]
     fn poll_interval_postgame_phases_are_2s() {
         assert_eq!(poll_interval("WaitingForStats"), Duration::from_secs(2));
-        assert_eq!(poll_interval("PreEndOfGame"),    Duration::from_secs(2));
-        assert_eq!(poll_interval("EndOfGame"),       Duration::from_secs(2));
+        assert_eq!(poll_interval("PreEndOfGame"), Duration::from_secs(2));
+        assert_eq!(poll_interval("EndOfGame"), Duration::from_secs(2));
     }
 
     #[test]
     fn poll_interval_active_phases_are_100ms() {
-        for phase in &["ReadyCheck", "ChampSelect", "Lobby", "None", "Matchmaking", ""] {
-            assert_eq!(poll_interval(phase), Duration::from_millis(100), "failed for phase {phase:?}");
+        for phase in &[
+            "ReadyCheck",
+            "ChampSelect",
+            "Lobby",
+            "None",
+            "Matchmaking",
+            "",
+        ] {
+            assert_eq!(
+                poll_interval(phase),
+                Duration::from_millis(100),
+                "failed for phase {phase:?}"
+            );
         }
     }
 }
 
 async fn load_champion_data_with_retry(
     client: &LcuClient,
-) -> anyhow::Result<(HashMap<String, i64>, HashMap<i64, String>, Vec<crate::lcu::ChampionSummary>)>
-{
+) -> anyhow::Result<(
+    HashMap<String, i64>,
+    HashMap<i64, String>,
+    Vec<crate::lcu::ChampionSummary>,
+)> {
     const MAX: u32 = 10;
     let mut last_err = None;
     for attempt in 0..MAX {

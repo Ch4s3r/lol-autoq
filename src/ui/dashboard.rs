@@ -1,11 +1,9 @@
 use dioxus::prelude::*;
 
-use crate::app_state::{AppState, GamePhase};
 use super::components::{
-    action_timeline::ActionTimeline,
-    activity_log::ActivityLog,
-    phase_card::PhaseCard,
+    action_timeline::ActionTimeline, activity_log::ActivityLog, phase_card::PhaseCard,
 };
+use crate::app_state::{AppState, GamePhase};
 
 #[component]
 pub fn Dashboard() -> Element {

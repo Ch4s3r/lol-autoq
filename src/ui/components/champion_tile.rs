@@ -11,7 +11,11 @@ pub fn ChampionTile(
     let portrait_url = format!(
         "https://ddragon.leagueoflegends.com/cdn/{ddragon_version}/img/champion/{alias}.png"
     );
-    let tile_class = if selected { "champ-tile selected" } else { "champ-tile" };
+    let tile_class = if selected {
+        "champ-tile selected"
+    } else {
+        "champ-tile"
+    };
     let name_click = name.clone();
 
     rsx! {

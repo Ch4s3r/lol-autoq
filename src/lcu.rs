@@ -1,14 +1,16 @@
-use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use anyhow::{Context, Result, anyhow};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use nom::{
+    IResult, Parser,
     bytes::complete::take_until,
     character::complete::{char, u16 as nom_u16},
     sequence::terminated,
-    IResult, Parser,
 };
 use reqwest::{Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
+use std::sync::Mutex;
 use tracing::trace;
 
 // --------------------------------------------------------------------------
@@ -64,11 +66,17 @@ impl LockfileData {
 
 /// nom parser for the lockfile. Format: `Name:PID:PORT:PASSWORD:PROTOCOL`
 fn parse_lockfile(input: &str) -> IResult<&str, LockfileData> {
-    let (input, _name)    = terminated(take_until(":"), char(':')).parse(input)?;
-    let (input, _pid)     = terminated(take_until(":"), char(':')).parse(input)?;
-    let (input, port)     = terminated(nom_u16,          char(':')).parse(input)?;
+    let (input, _name) = terminated(take_until(":"), char(':')).parse(input)?;
+    let (input, _pid) = terminated(take_until(":"), char(':')).parse(input)?;
+    let (input, port) = terminated(nom_u16, char(':')).parse(input)?;
     let (input, password) = take_until(":").parse(input)?;
-    Ok((input, LockfileData { port, password: password.to_owned() }))
+    Ok((
+        input,
+        LockfileData {
+            port,
+            password: password.to_owned(),
+        },
+    ))
 }
 
 // --------------------------------------------------------------------------
@@ -79,6 +87,10 @@ pub struct LcuClient {
     client: Client,
     base_url: String,
     auth_header: String,
+    /// Last logged response body per path (with timer counters stripped).
+    /// Only updated/logged when the stripped body changes — suppresses
+    /// repetitive trace spam caused by the millisecond timer ticking every poll.
+    last_get_body: Mutex<HashMap<String, String>>,
 }
 
 impl LcuClient {
@@ -94,6 +106,7 @@ impl LcuClient {
             client,
             base_url: format!("https://127.0.0.1:{}", lockfile.port),
             auth_header: format!("Basic {}", credentials),
+            last_get_body: Mutex::new(HashMap::new()),
         })
     }
 
@@ -122,7 +135,16 @@ impl LcuClient {
             .text()
             .await
             .with_context(|| format!("Failed to read response body for GET {}", path))?;
-        trace!(method = "GET", %url, body = %text, "response body");
+        // Only log the body when something meaningful changed — strip the two
+        // timer counter fields that tick every 100 ms so they don't flood the log.
+        {
+            let stripped = strip_timer_counters(&text);
+            let mut cache = self.last_get_body.lock().unwrap();
+            if cache.get(path).map(|s| s.as_str()) != Some(stripped.as_str()) {
+                trace!(method = "GET", %url, body = %text, "response body changed");
+                cache.insert(path.to_owned(), stripped);
+            }
+        }
         serde_json::from_str::<T>(&text).with_context(|| {
             let preview = if text.len() > 500 {
                 format!("{}...", &text[..500])
@@ -178,7 +200,52 @@ impl LcuClient {
         trace!(method = "PATCH", %url, %status, "response body: (empty)");
         Ok(())
     }
+}
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Replace the numeric values of the two LCU timer counter fields with `0`
+/// so that response body comparisons ignore the millisecond countdown noise.
+/// This is intentionally done at string level to avoid JSON parsing overhead
+/// on every 100 ms poll tick.
+fn strip_timer_counters(body: &str) -> String {
+    // The fields we want to ignore: "adjustedTimeLeftInPhase": <number>
+    // and "totalTimeInPhase": <number>.
+    replace_json_number(
+        &replace_json_number(body, "adjustedTimeLeftInPhase"),
+        "totalTimeInPhase",
+    )
+}
+
+/// Replace `"<key>": <digits>` with `"<key>": 0` in a JSON string.
+fn replace_json_number(s: &str, key: &str) -> String {
+    let needle = format!("\"{}\":", key);
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(pos) = rest.find(&needle) {
+        out.push_str(&rest[..pos + needle.len()]);
+        rest = &rest[pos + needle.len()..];
+        // Skip optional whitespace then consume digits (possibly negative).
+        let value_start = rest.trim_start_matches([' ', '\t', '\n', '\r']);
+        let skipped = rest.len() - value_start.len();
+        out.push_str(&rest[..skipped]); // preserve whitespace
+        rest = value_start;
+        // Consume optional minus sign then digits.
+        let after_sign = rest.strip_prefix('-').unwrap_or(rest);
+        let num_len = after_sign
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(after_sign.len())
+            + (rest.len() - after_sign.len());
+        out.push('0');
+        rest = &rest[num_len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+impl LcuClient {
     // ------------------------------------------------------------------
     // Gameflow
     // ------------------------------------------------------------------
@@ -215,7 +282,10 @@ impl LcuClient {
         }
         self.patch_json(
             &format!("/lol-champ-select/v1/session/actions/{}", action_id),
-            &Body { champion_id, completed: false },
+            &Body {
+                champion_id,
+                completed: false,
+            },
         )
         .await
     }
@@ -231,15 +301,19 @@ impl LcuClient {
         }
         self.patch_json(
             &format!("/lol-champ-select/v1/session/actions/{}", action_id),
-            &Body { champion_id, completed: true },
+            &Body {
+                champion_id,
+                completed: true,
+            },
         )
         .await?;
         // Some LCU versions need the explicit /complete POST as well.
-        let _ = self.post_no_body(&format!(
-            "/lol-champ-select/v1/session/actions/{}/complete",
-            action_id
-        ))
-        .await;
+        let _ = self
+            .post_no_body(&format!(
+                "/lol-champ-select/v1/session/actions/{}/complete",
+                action_id
+            ))
+            .await;
         Ok(())
     }
 
@@ -423,6 +497,33 @@ mod tests {
             square_portrait_path: "".into(),
         };
         assert!(!c.is_playable());
+    }
+
+    // ── strip_timer_counters ──────────────────────────────────────────────────
+
+    #[test]
+    fn strip_timer_counters_zeroes_both_fields() {
+        let body = r#"{"timer":{"adjustedTimeLeftInPhase":28500,"totalTimeInPhase":30000,"phase":"BAN_PICK"}}"#;
+        let stripped = strip_timer_counters(body);
+        assert_eq!(
+            stripped,
+            r#"{"timer":{"adjustedTimeLeftInPhase":0,"totalTimeInPhase":0,"phase":"BAN_PICK"}}"#,
+        );
+    }
+
+    #[test]
+    fn strip_timer_counters_preserves_unrelated_fields() {
+        let body = r#"{"localPlayerCellId":2,"timer":{"adjustedTimeLeftInPhase":100,"totalTimeInPhase":30000}}"#;
+        let stripped = strip_timer_counters(body);
+        assert!(stripped.contains("\"localPlayerCellId\":2"));
+        assert!(stripped.contains("\"adjustedTimeLeftInPhase\":0"));
+        assert!(stripped.contains("\"totalTimeInPhase\":0"));
+    }
+
+    #[test]
+    fn strip_timer_counters_body_without_timer_unchanged() {
+        let body = r#""ChampSelect""#;
+        assert_eq!(strip_timer_counters(body), body);
     }
 }
 

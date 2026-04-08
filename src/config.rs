@@ -120,8 +120,7 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let path = config_path();
         let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
-        fs::write(&path, content)
-            .with_context(|| format!("Failed to write {}", path.display()))?;
+        fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;
         Ok(())
     }
 
@@ -155,8 +154,8 @@ mod tests {
 
     #[test]
     fn format_lock_in_numeric_shows_seconds() {
-        assert_eq!(format_lock_in(5),  "≤ 5s");
-        assert_eq!(format_lock_in(0),  "≤ 0s");
+        assert_eq!(format_lock_in(5), "≤ 5s");
+        assert_eq!(format_lock_in(0), "≤ 0s");
         assert_eq!(format_lock_in(30), "≤ 30s");
     }
 
@@ -210,8 +209,14 @@ mod tests {
     #[test]
     fn champions_for_position_bot_adc_bottom_are_same() {
         let cfg = Config::default();
-        assert_eq!(cfg.champions_for_position("bot"),    cfg.champions_for_position("bottom"));
-        assert_eq!(cfg.champions_for_position("adc"),    cfg.champions_for_position("bottom"));
+        assert_eq!(
+            cfg.champions_for_position("bot"),
+            cfg.champions_for_position("bottom")
+        );
+        assert_eq!(
+            cfg.champions_for_position("adc"),
+            cfg.champions_for_position("bottom")
+        );
     }
 
     #[test]

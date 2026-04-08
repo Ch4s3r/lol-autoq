@@ -27,10 +27,18 @@ impl ConnectionState {
         matches!(self, Self::Connected { .. })
     }
     pub fn chip_class(&self) -> &'static str {
-        if self.is_connected() { "chip chip-connected" } else { "chip chip-searching" }
+        if self.is_connected() {
+            "chip chip-connected"
+        } else {
+            "chip chip-searching"
+        }
     }
     pub fn dot_class(&self) -> &'static str {
-        if self.is_connected() { "chip-dot chip-dot-connected" } else { "chip-dot chip-dot-searching" }
+        if self.is_connected() {
+            "chip-dot chip-dot-connected"
+        } else {
+            "chip-dot chip-dot-searching"
+        }
     }
 }
 
@@ -157,8 +165,8 @@ pub enum BanStatus {
     NoBansConfigured,
     AllBansExhausted,
     WaitingToLock { champion_name: String },
-    Hovering      { champion_name: String },
-    Banned        { champion_name: String },
+    Hovering { champion_name: String },
+    Banned { champion_name: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,16 +174,16 @@ pub enum HoverStatus {
     Idle,
     NoPrefsConfigured { position: String },
     AllPicksExhausted { position: String },
-    WaitingToHover    { champion_name: String },
-    Hovering          { champion_name: String },
-    LockedIn          { champion_name: String },
+    WaitingToHover { champion_name: String },
+    Hovering { champion_name: String },
+    LockedIn { champion_name: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PickStatus {
     Idle,
-    WaitingToLock  { champion_name: String },
-    LockedIn       { champion_name: String },
+    WaitingToLock { champion_name: String },
+    LockedIn { champion_name: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -185,8 +193,8 @@ pub struct ChampSelectStatus {
     /// LCU sub-phase string: "PLANNING", "BAN_PICK", "FINALIZATION", "".
     pub sub_phase: String,
     pub hover: HoverStatus,
-    pub ban:   BanStatus,
-    pub pick:  PickStatus,
+    pub ban: BanStatus,
+    pub pick: PickStatus,
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +232,11 @@ impl AppState {
         let msg = msg.into();
         let timestamp = Local::now().format("%H:%M:%S").to_string();
         crate::logger::write_activity(&timestamp, &msg, &kind);
-        let entry = ActivityEntry { timestamp, message: msg, kind };
+        let entry = ActivityEntry {
+            timestamp,
+            message: msg,
+            kind,
+        };
         let mut activities = self.activities;
         let mut log = activities.write();
         log.push_front(entry);
@@ -285,41 +297,62 @@ mod tests {
 
     #[test]
     fn connection_state_connected_label() {
-        assert_eq!(ConnectionState::Connected { port: 1 }.label(), "Connected to LCU");
+        assert_eq!(
+            ConnectionState::Connected { port: 1 }.label(),
+            "Connected to LCU"
+        );
     }
 
     #[test]
     fn connection_state_chip_class_connected() {
-        assert_eq!(ConnectionState::Connected { port: 1 }.chip_class(), "chip chip-connected");
-        assert_eq!(ConnectionState::Connected { port: 1 }.dot_class(), "chip-dot chip-dot-connected");
+        assert_eq!(
+            ConnectionState::Connected { port: 1 }.chip_class(),
+            "chip chip-connected"
+        );
+        assert_eq!(
+            ConnectionState::Connected { port: 1 }.dot_class(),
+            "chip-dot chip-dot-connected"
+        );
     }
 
     #[test]
     fn connection_state_chip_class_searching() {
-        assert_eq!(ConnectionState::Searching.chip_class(), "chip chip-searching");
-        assert_eq!(ConnectionState::Searching.dot_class(), "chip-dot chip-dot-searching");
-        assert_eq!(ConnectionState::Disconnected.chip_class(), "chip chip-searching");
+        assert_eq!(
+            ConnectionState::Searching.chip_class(),
+            "chip chip-searching"
+        );
+        assert_eq!(
+            ConnectionState::Searching.dot_class(),
+            "chip-dot chip-dot-searching"
+        );
+        assert_eq!(
+            ConnectionState::Disconnected.chip_class(),
+            "chip chip-searching"
+        );
     }
 
     // ── GamePhase::from_lcu ───────────────────────────────────────────────────
 
     #[test]
     fn game_phase_from_lcu_maps_all_known_strings() {
-        assert_eq!(GamePhase::from_lcu("None"),           GamePhase::None);
-        assert_eq!(GamePhase::from_lcu("Lobby"),          GamePhase::Lobby);
-        assert_eq!(GamePhase::from_lcu("Matchmaking"),    GamePhase::Matchmaking);
-        assert_eq!(GamePhase::from_lcu("ReadyCheck"),     GamePhase::ReadyCheck);
-        assert_eq!(GamePhase::from_lcu("ChampSelect"),    GamePhase::ChampSelect);
-        assert_eq!(GamePhase::from_lcu("GameStart"),      GamePhase::GameStart);
-        assert_eq!(GamePhase::from_lcu("InProgress"),     GamePhase::InProgress);
-        assert_eq!(GamePhase::from_lcu("EndOfGame"),      GamePhase::EndOfGame);
-        assert_eq!(GamePhase::from_lcu("WaitingForStats"),GamePhase::EndOfGame);
-        assert_eq!(GamePhase::from_lcu("PreEndOfGame"),   GamePhase::EndOfGame);
+        assert_eq!(GamePhase::from_lcu("None"), GamePhase::None);
+        assert_eq!(GamePhase::from_lcu("Lobby"), GamePhase::Lobby);
+        assert_eq!(GamePhase::from_lcu("Matchmaking"), GamePhase::Matchmaking);
+        assert_eq!(GamePhase::from_lcu("ReadyCheck"), GamePhase::ReadyCheck);
+        assert_eq!(GamePhase::from_lcu("ChampSelect"), GamePhase::ChampSelect);
+        assert_eq!(GamePhase::from_lcu("GameStart"), GamePhase::GameStart);
+        assert_eq!(GamePhase::from_lcu("InProgress"), GamePhase::InProgress);
+        assert_eq!(GamePhase::from_lcu("EndOfGame"), GamePhase::EndOfGame);
+        assert_eq!(GamePhase::from_lcu("WaitingForStats"), GamePhase::EndOfGame);
+        assert_eq!(GamePhase::from_lcu("PreEndOfGame"), GamePhase::EndOfGame);
     }
 
     #[test]
     fn game_phase_from_lcu_unknown_preserves_string() {
-        assert_eq!(GamePhase::from_lcu("SomeNewPhase"), GamePhase::Unknown("SomeNewPhase".into()));
+        assert_eq!(
+            GamePhase::from_lcu("SomeNewPhase"),
+            GamePhase::Unknown("SomeNewPhase".into())
+        );
     }
 
     // ── GamePhase::css_class ──────────────────────────────────────────────────
@@ -328,14 +361,23 @@ mod tests {
     fn game_phase_css_class_returns_distinct_classes() {
         // Each reachable phase must return a non-empty, CSS-safe class string.
         let phases = [
-            GamePhase::None, GamePhase::Lobby, GamePhase::Matchmaking, GamePhase::ReadyCheck,
-            GamePhase::ChampSelect, GamePhase::GameStart, GamePhase::InProgress,
-            GamePhase::EndOfGame, GamePhase::Unknown("x".into()),
+            GamePhase::None,
+            GamePhase::Lobby,
+            GamePhase::Matchmaking,
+            GamePhase::ReadyCheck,
+            GamePhase::ChampSelect,
+            GamePhase::GameStart,
+            GamePhase::InProgress,
+            GamePhase::EndOfGame,
+            GamePhase::Unknown("x".into()),
         ];
         for phase in &phases {
             let cls = phase.css_class();
             assert!(!cls.is_empty(), "empty css_class for {phase:?}");
-            assert!(!cls.contains(' ') || cls.starts_with("phase-"), "unexpected class format: {cls}");
+            assert!(
+                !cls.contains(' ') || cls.starts_with("phase-"),
+                "unexpected class format: {cls}"
+            );
         }
     }
 
@@ -349,14 +391,24 @@ mod tests {
     #[test]
     fn game_phase_icon_starts_with_fa_solid_prefix() {
         let phases = [
-            GamePhase::None, GamePhase::Lobby, GamePhase::Matchmaking, GamePhase::ReadyCheck,
-            GamePhase::ChampSelect, GamePhase::GameStart, GamePhase::InProgress,
-            GamePhase::EndOfGame, GamePhase::Unknown("x".into()),
+            GamePhase::None,
+            GamePhase::Lobby,
+            GamePhase::Matchmaking,
+            GamePhase::ReadyCheck,
+            GamePhase::ChampSelect,
+            GamePhase::GameStart,
+            GamePhase::InProgress,
+            GamePhase::EndOfGame,
+            GamePhase::Unknown("x".into()),
         ];
         for phase in &phases {
             let icon = phase.icon();
-            assert!(icon.starts_with("fa-solid ") || icon.starts_with("fa-regular ") || icon.starts_with("fa-brands "),
-                "icon class does not start with a Font Awesome prefix: {icon}");
+            assert!(
+                icon.starts_with("fa-solid ")
+                    || icon.starts_with("fa-regular ")
+                    || icon.starts_with("fa-brands "),
+                "icon class does not start with a Font Awesome prefix: {icon}"
+            );
         }
     }
 
@@ -396,9 +448,15 @@ mod tests {
 
         // The component renders with `.iter().rev()` — oldest must come first.
         let rendered: Vec<&ActivityEntry> = log.iter().rev().collect();
-        assert_eq!(rendered[0].message, "oldest", "index 0 must be the oldest entry");
+        assert_eq!(
+            rendered[0].message, "oldest",
+            "index 0 must be the oldest entry"
+        );
         assert_eq!(rendered[1].message, "middle");
-        assert_eq!(rendered[2].message, "newest", "last index must be the newest entry");
+        assert_eq!(
+            rendered[2].message, "newest",
+            "last index must be the newest entry"
+        );
     }
 
     // ── BanStatus / PickStatus ────────────────────────────────────────────────
@@ -409,9 +467,15 @@ mod tests {
             BanStatus::Idle,
             BanStatus::NoBansConfigured,
             BanStatus::AllBansExhausted,
-            BanStatus::WaitingToLock { champion_name: "Zed".into() },
-            BanStatus::Hovering      { champion_name: "Yasuo".into() },
-            BanStatus::Banned        { champion_name: "Yone".into() },
+            BanStatus::WaitingToLock {
+                champion_name: "Zed".into(),
+            },
+            BanStatus::Hovering {
+                champion_name: "Yasuo".into(),
+            },
+            BanStatus::Banned {
+                champion_name: "Yone".into(),
+            },
         ];
         for v in &variants {
             assert_eq!(v, &v.clone());
@@ -423,28 +487,52 @@ mod tests {
     fn hover_status_variants_implement_clone_and_partialeq() {
         let variants = vec![
             HoverStatus::Idle,
-            HoverStatus::NoPrefsConfigured { position: "Mid".into() },
-            HoverStatus::AllPicksExhausted { position: "Bot".into() },
-            HoverStatus::WaitingToHover    { champion_name: "Jinx".into() },
-            HoverStatus::Hovering          { champion_name: "Ahri".into() },
-            HoverStatus::LockedIn          { champion_name: "Ahri".into() },
+            HoverStatus::NoPrefsConfigured {
+                position: "Mid".into(),
+            },
+            HoverStatus::AllPicksExhausted {
+                position: "Bot".into(),
+            },
+            HoverStatus::WaitingToHover {
+                champion_name: "Jinx".into(),
+            },
+            HoverStatus::Hovering {
+                champion_name: "Ahri".into(),
+            },
+            HoverStatus::LockedIn {
+                champion_name: "Ahri".into(),
+            },
         ];
         for v in &variants {
             assert_eq!(v, &v.clone());
         }
-        assert_ne!(HoverStatus::Idle, HoverStatus::NoPrefsConfigured { position: "Top".into() });
+        assert_ne!(
+            HoverStatus::Idle,
+            HoverStatus::NoPrefsConfigured {
+                position: "Top".into()
+            }
+        );
     }
 
     #[test]
     fn pick_status_variants_implement_clone_and_partialeq() {
         let variants = vec![
             PickStatus::Idle,
-            PickStatus::WaitingToLock { champion_name: "Ahri".into() },
-            PickStatus::LockedIn      { champion_name: "Lux".into() },
+            PickStatus::WaitingToLock {
+                champion_name: "Ahri".into(),
+            },
+            PickStatus::LockedIn {
+                champion_name: "Lux".into(),
+            },
         ];
         for v in &variants {
             assert_eq!(v, &v.clone());
         }
-        assert_ne!(PickStatus::Idle, PickStatus::LockedIn { champion_name: "Top".into() });
+        assert_ne!(
+            PickStatus::Idle,
+            PickStatus::LockedIn {
+                champion_name: "Top".into()
+            }
+        );
     }
 }
