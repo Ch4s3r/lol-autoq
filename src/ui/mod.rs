@@ -171,6 +171,11 @@ async fn inner_poll_loop(
     let mut last_sub_phase = String::new();
     let mut last_logged_whole_sec: i64 = -1;
     let mut ready_check_tick_sec: i64 = -1;
+    // Wall-clock timer seed: mirrors ActionTimeline's freeze-compensation logic so
+    // the decision functions (decide_ban / decide_pick) see a live countdown even
+    // when the LCU timer stalls for several seconds between polls.
+    // Tuple: (seeded_remaining_secs, wall_clock_instant_at_seed)
+    let mut lcu_timer_seed: Option<(f64, Instant)> = None;
 
     loop {
         // Drain tracing events into the UI activity log (keeps file and UI in sync).
@@ -197,6 +202,7 @@ async fn inner_poll_loop(
             last_sub_phase = String::new();
             last_logged_whole_sec = -1;
             ready_check_tick_sec = -1;
+            lcu_timer_seed = None;
         }
 
         let cfg: Config = state.config.read().clone();
@@ -231,13 +237,43 @@ async fn inner_poll_loop(
             }
 
             "ChampSelect" => {
-                let session = match client.get_champ_select_session().await {
+                let mut session = match client.get_champ_select_session().await {
                     Ok(s) => s,
                     Err(_) => {
                         sleep(POLL_ACTIVE).await;
                         continue;
                     }
                 };
+
+                // ── Wall-clock timer compensation ─────────────────────────
+                // The LCU timer can freeze for several seconds mid-turn. Without
+                // this, decide_ban / decide_pick see a stale "remaining" value and
+                // may miss their lock-in window entirely. We mirror the same seed
+                // logic that ActionTimeline uses for its display countdown.
+                {
+                    let lcu_ms = session.timer.adjusted_time_left_ms;
+                    let lcu_remaining = lcu_ms as f64 / 1000.0;
+                    let adjusted = match lcu_timer_seed {
+                        Some((base, seeded_at)) => {
+                            let wall_elapsed = seeded_at.elapsed().as_secs_f64();
+                            let predicted = (base - wall_elapsed).max(0.0);
+                            // Re-seed when LCU gives a meaningfully different value
+                            // (either un-freeze, new turn reset, or normal progression).
+                            if (lcu_remaining - predicted).abs() > 0.5 {
+                                lcu_timer_seed = Some((lcu_remaining, Instant::now()));
+                                lcu_remaining
+                            } else {
+                                predicted
+                            }
+                        }
+                        None => {
+                            lcu_timer_seed = Some((lcu_remaining, Instant::now()));
+                            lcu_remaining
+                        }
+                    };
+                    tracing::trace!(lcu_ms, adjusted_secs = adjusted, "timer_adjusted");
+                    session.timer.adjusted_time_left_ms = (adjusted * 1000.0) as i64;
+                }
 
                 // ── Phase timer diagnostics ────────────────────────────────
                 let sub_phase_now = session.timer.phase.clone();

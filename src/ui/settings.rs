@@ -223,16 +223,19 @@ fn BansTab(on_save: EventHandler<()>) -> Element {
 fn TimersTab(on_save: EventHandler<()>) -> Element {
     let mut state = use_context::<AppState>();
 
-    // Non-INSTANT values must fit in 0-30s for the slider
-    const MAX_SECS: u64 = 30;
+    // Slider maxes derived from observed LCU phase durations:
+    //   BAN_PICK turns = 25 s each  →  ban lock-in, pick lock-in, pick hover
+    //   ReadyCheck     = 12 s       →  queue accept delay
+    const BAN_PICK_MAX: u64 = 25;
+    const READY_CHECK_MAX: u64 = 12;
 
     rsx! {
         div { class: "section-content",
             TimerSlider {
                 label: "Ban lock-in".to_string(),
-                sublabel: "Lock in the ban when this many seconds remain".to_string(),
+                sublabel: "Lock in the ban when this many seconds remain (turn = 25 s)".to_string(),
                 value: state.config.read().lock_in_ban_secs,
-                max_secs: MAX_SECS,
+                max_secs: BAN_PICK_MAX,
                 on_change: {
                     let on_save = on_save;
                     move |v| {
@@ -243,9 +246,9 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
             }
             TimerSlider {
                 label: "Pick lock-in".to_string(),
-                sublabel: "Lock in the pick when this many seconds remain".to_string(),
+                sublabel: "Lock in the pick when this many seconds remain (turn = 25 s)".to_string(),
                 value: state.config.read().lock_in_pick_secs,
-                max_secs: MAX_SECS,
+                max_secs: BAN_PICK_MAX,
                 on_change: {
                     let on_save = on_save;
                     move |v| {
@@ -256,9 +259,9 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
             }
             TimerSlider {
                 label: "Pick hover".to_string(),
-                sublabel: "Show champion hover when this many seconds remain (Instant = immediately)".to_string(),
+                sublabel: "Show champion hover when this many seconds remain (turn = 25 s, Instant = immediately)".to_string(),
                 value: state.config.read().hover_pick_secs,
-                max_secs: MAX_SECS,
+                max_secs: BAN_PICK_MAX,
                 on_change: {
                     let on_save = on_save;
                     move |v| {
@@ -269,9 +272,9 @@ fn TimersTab(on_save: EventHandler<()>) -> Element {
             }
             TimerSlider {
                 label: "Queue accept delay".to_string(),
-                sublabel: "Wait this many seconds before accepting a queue pop".to_string(),
+                sublabel: "Wait this many seconds before accepting a queue pop (ready check = 12 s)".to_string(),
                 value: state.config.read().accept_queue_delay_secs,
-                max_secs: MAX_SECS,
+                max_secs: READY_CHECK_MAX,
                 on_change: {
                     let on_save = on_save;
                     move |v| {
